@@ -1,0 +1,12 @@
+[package]
+name = "acquire-driver-pvcam"
+authors = ["Nathan Clack <nclack@chanzuckerberg.com>"]
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[build-dependencies]
+bindgen = "0.66"
