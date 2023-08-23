@@ -8,5 +8,8 @@ publish = false
 [lib]
 crate-type = ["cdylib"]
 
+[dependencies]
+log ="0.4"
+
 [build-dependencies]
 bindgen = "0.66"

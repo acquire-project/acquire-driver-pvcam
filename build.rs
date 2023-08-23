@@ -71,5 +71,5 @@ fn prepare_pvcam() {
 
 fn main() {
     prepare_acquire_core_libs();
-    // prepare_pvcam();
+    prepare_pvcam();
 }
