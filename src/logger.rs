@@ -38,7 +38,7 @@ impl log::Log for AcquireLogger {
             // have the lifetime of the calling scope.
             unsafe {
                 // TODO: (nclack) test with a utf-8 string
-                let is_error = if (record.level() == Level::Error) {
+                let is_error = if record.level() == Level::Error {
                     1
                 } else {
                     0

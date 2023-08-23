@@ -1,10 +1,7 @@
 use crate::capi::acquire::{
-    DeviceIdentifier, DeviceStatusCode, DeviceStatusCode_Device_Err, DeviceStatusCode_Device_Ok,
-    Driver,
+    DeviceStatusCode, DeviceStatusCode_Device_Err, DeviceStatusCode_Device_Ok, Driver,
 };
-use log::{error, warn};
-use std::ffi::{c_char, c_int};
-use std::mem::MaybeUninit;
+use log::{error, info, LevelFilter};
 
 mod capi;
 mod logger;
@@ -17,6 +14,12 @@ struct PVCamDriver {
 
 impl PVCamDriver {
     fn new(reporter: logger::ReporterCallback) -> Self {
+        let logger = logger::AcquireLogger::new(reporter);
+
+        log::set_logger(&logger)
+            .map(|()| log::set_max_level(LevelFilter::Trace))
+            .expect("Failed to set logger");
+
         Self {
             driver: Driver {
                 device_count: None, //Some(|driver| -> u32 { todo!() }),
@@ -24,9 +27,9 @@ impl PVCamDriver {
                 open: None, //Some(|driver, device_id, out| -> DeviceStatusCode { todo!() }),
                 close: None, //Some(|driver, device| -> DeviceStatusCode { todo!() }),
 
-                shutdown: Some(aq_pvcam_shutdown),
+                shutdown: Some(shutdown),
             },
-            logger: logger::AcquireLogger::new(reporter),
+            logger,
         }
     }
 
@@ -59,7 +62,7 @@ impl PVCamDriver {
     }
 }
 
-extern "C" fn aq_pvcam_shutdown(driver: *mut Driver) -> DeviceStatusCode {
+extern "C" fn shutdown(driver: *mut Driver) -> DeviceStatusCode {
     if let Some(ctx) = unsafe { PVCamDriver::from_driver_mut(driver) } {
         unsafe { Box::from_raw(ctx) }; // take ownership to free the pointer
         DeviceStatusCode_Device_Ok
@@ -70,6 +73,8 @@ extern "C" fn aq_pvcam_shutdown(driver: *mut Driver) -> DeviceStatusCode {
 #[no_mangle]
 pub extern "C" fn acquire_driver_init_v0(reporter: logger::ReporterCallback) -> *mut Driver {
     let context = Box::new(PVCamDriver::new(reporter));
+
+    info!("HERE");
 
     // This follows the pattern used on the C side.
     // For this to work:
