@@ -9,4 +9,5 @@ Cargo.lock
 *.pdb
 
 # IDE settings
+.idea
 .vscode
