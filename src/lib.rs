@@ -1,6 +1,7 @@
 use crate::capi::acquire::{
     DeviceStatusCode, DeviceStatusCode_Device_Err, DeviceStatusCode_Device_Ok, Driver,
 };
+use crate::logger::AcquireLogger;
 use log::{error, info, LevelFilter};
 
 mod capi;
@@ -9,14 +10,11 @@ mod logger;
 #[repr(C)]
 struct PVCamDriver {
     driver: Driver,
-    logger: logger::AcquireLogger,
 }
 
 impl PVCamDriver {
     fn new(reporter: logger::ReporterCallback) -> Self {
-        let logger = logger::AcquireLogger::new(reporter);
-
-        log::set_logger(&logger)
+        log::set_boxed_logger(Box::new(AcquireLogger::new(reporter)))
             .map(|()| log::set_max_level(LevelFilter::Trace))
             .expect("Failed to set logger");
 
@@ -29,7 +27,6 @@ impl PVCamDriver {
 
                 shutdown: Some(shutdown),
             },
-            logger,
         }
     }
 
@@ -63,6 +60,7 @@ impl PVCamDriver {
 }
 
 extern "C" fn shutdown(driver: *mut Driver) -> DeviceStatusCode {
+    info!("HERE in shutdown");
     if let Some(ctx) = unsafe { PVCamDriver::from_driver_mut(driver) } {
         unsafe { Box::from_raw(ctx) }; // take ownership to free the pointer
         DeviceStatusCode_Device_Ok
@@ -74,7 +72,7 @@ extern "C" fn shutdown(driver: *mut Driver) -> DeviceStatusCode {
 pub extern "C" fn acquire_driver_init_v0(reporter: logger::ReporterCallback) -> *mut Driver {
     let context = Box::new(PVCamDriver::new(reporter));
 
-    info!("HERE");
+    info!("HERE in init");
 
     // This follows the pattern used on the C side.
     // For this to work:

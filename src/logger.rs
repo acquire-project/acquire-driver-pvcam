@@ -1,7 +1,8 @@
 //! Logger that forwards logs through to the acquire runtime.
 //! Uses the `reporter` callback passed to the driver function.
 use log::{Level, Metadata, Record};
-use std::ffi::{c_char, c_int};
+use parking_lot::Mutex;
+use std::ffi::{c_char, c_int, CString};
 
 pub(crate) type ReporterCallback = Option<
     unsafe extern "C" fn(
@@ -14,19 +15,21 @@ pub(crate) type ReporterCallback = Option<
 >;
 
 pub(crate) struct AcquireLogger {
-    reporter: ReporterCallback,
+    reporter: Mutex<ReporterCallback>,
 }
 
 impl AcquireLogger {
     pub fn new(reporter: ReporterCallback) -> Self {
-        Self { reporter }
+        Self {
+            reporter: Mutex::new(reporter),
+        }
     }
 }
 
 impl log::Log for AcquireLogger {
     fn enabled(&self, _metadata: &Metadata) -> bool {
         // Don't filter based on log-level here. Just check if the reporter pointer looks right.
-        self.reporter.is_some()
+        self.reporter.lock().is_some()
     }
 
     /// Forwards logs via the Acquire runtime reporter callback.
@@ -38,25 +41,19 @@ impl log::Log for AcquireLogger {
             // have the lifetime of the calling scope.
             unsafe {
                 // TODO: (nclack) test with a utf-8 string
-                let is_error = if record.level() == Level::Error {
-                    1
-                } else {
-                    0
-                };
-                self.reporter.unwrap()(
+                let is_error = if record.level() == Level::Error { 1 } else { 0 };
+                let file =
+                    CString::from_vec_unchecked(record.file().unwrap_or("(unknown file)").into());
+                let place = CString::from_vec_unchecked(
+                    record.module_path().unwrap_or("(unknown location)").into(),
+                );
+                let msg = CString::from_vec_unchecked(msg.into());
+                self.reporter.lock().unwrap()(
                     is_error,
-                    record
-                        .file()
-                        .unwrap_or("(unknown file)")
-                        .as_bytes()
-                        .as_ptr() as _,
+                    file.as_ptr(),
                     record.line().unwrap_or(0) as _,
-                    record
-                        .module_path()
-                        .unwrap_or("(unknown module path")
-                        .as_bytes()
-                        .as_ptr() as _,
-                    msg.as_str().as_bytes().as_ptr() as _,
+                    place.as_ptr(),
+                    msg.as_ptr(),
                 );
             }
         }

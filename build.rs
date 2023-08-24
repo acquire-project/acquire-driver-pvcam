@@ -71,5 +71,6 @@ fn prepare_pvcam() {
 
 fn main() {
     prepare_acquire_core_libs();
+    #[cfg(target_os="windows")]
     prepare_pvcam();
 }

@@ -1,6 +1,3 @@
-mod capi;
-
-use log::debug;
 use std::ffi::{c_char, c_int, CStr};
 
 type ReporterCallback = Option<
@@ -31,27 +28,37 @@ extern "C" fn reporter(
     let file = make_string(file);
     let function = make_string(function);
     let msg = make_string(msg);
+    let sev = if is_error > 0 { "ERROR" } else { "INFO" };
+    let line = line as i32;
 
-    if `
+    println!("{sev} {file}:{line} {function} - {msg}");
 }
 
 #[test]
 fn init_and_shutdown() {
-    println!("I'm in {}", std::env::current_exe().unwrap().display());
+    let dylib_path = test_cdylib::build_current_project();
+    println!("I'm in {}", dylib_path.display());
 
     unsafe {
-        let lib = libloading::Library::new(
-            std::env::current_exe()
-                .unwrap()
-                .join("../acquire_driver_pvcam.dll"),
-        )
-        .expect("Could not find acquire-driver-pvcam");
+        let lib =
+            libloading::Library::new(dylib_path).expect("Could not find acquire-driver-pvcam");
 
-        let entry: libloading::Symbol<extern "C" fn(ReporterCallback) -> *mut capi::Driver> = lib
-            .get(b"acquire_driver_init_v0")
-            .expect("Expected to find entry point: acquire_driver_init_v0");
+        let entry: libloading::Symbol<extern "C" fn(ReporterCallback) -> *mut crate::aq::Driver> =
+            lib.get(b"acquire_driver_init_v0")
+                .expect("Expected to find entry point: acquire_driver_init_v0");
         let driver = entry(Some(reporter));
+        assert_eq!(
+            unsafe { (*driver).shutdown.unwrap()(driver) },
+            crate::aq::DeviceStatusCode_Device_Ok
+        );
     }
+}
 
-    todo!()
+pub(crate) mod aq {
+    #![allow(non_upper_case_globals)]
+    #![allow(non_camel_case_types)]
+    #![allow(non_snake_case)]
+    #![allow(unused)]
+
+    include!(concat!(env!("OUT_DIR"), "/acquire-capi.rs"));
 }

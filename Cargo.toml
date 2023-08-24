@@ -9,8 +9,12 @@ publish = false
 crate-type = ["cdylib"]
 
 [dependencies]
-log = "0.4"
+log = { version = "0.4", features = ["std"] }
+parking_lot = "0.12"
+
+[dev-dependencies]
 libloading = "0.8"
+test-cdylib = "1.1"
 
 [build-dependencies]
 bindgen = "0.66"
