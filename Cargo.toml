@@ -11,10 +11,12 @@ crate-type = ["cdylib"]
 [dependencies]
 log = { version = "0.4", features = ["std"] }
 parking_lot = "0.12"
+no-panic = "0.1.22"
 
 [dev-dependencies]
 libloading = "0.8"
 test-cdylib = "1.1"
+more-asserts = "0.3"
 
 [build-dependencies]
 bindgen = "0.66"

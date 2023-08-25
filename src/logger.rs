@@ -36,12 +36,12 @@ impl log::Log for AcquireLogger {
     fn log(&self, record: &Record) {
         if self.enabled(record.metadata()) {
             let msg = format!("{}", record.args());
-            // The lifetime of the strings doesn't need to escape this function.
-            // `reporter()` is a callback provided by the acquire runtime. It assumes all strings
-            // have the lifetime of the calling scope.
+
+            let is_error = if record.level() == Level::Error { 1 } else { 0 };
             unsafe {
-                // TODO: (nclack) test with a utf-8 string
-                let is_error = if record.level() == Level::Error { 1 } else { 0 };
+                // The lifetime of the strings doesn't need to escape this function.
+                // `reporter()` is a callback provided by the acquire runtime. It assumes all strings
+                // have the lifetime of the calling scope.
                 let file =
                     CString::from_vec_unchecked(record.file().unwrap_or("(unknown file)").into());
                 let place = CString::from_vec_unchecked(

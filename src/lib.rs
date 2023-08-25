@@ -2,7 +2,7 @@ use crate::capi::acquire::{
     DeviceStatusCode, DeviceStatusCode_Device_Err, DeviceStatusCode_Device_Ok, Driver,
 };
 use crate::logger::AcquireLogger;
-use log::{error, info, LevelFilter};
+use log::{error, info, warn, LevelFilter};
 
 mod capi;
 mod logger;
@@ -16,7 +16,11 @@ impl PVCamDriver {
     fn new(reporter: logger::ReporterCallback) -> Self {
         log::set_boxed_logger(Box::new(AcquireLogger::new(reporter)))
             .map(|()| log::set_max_level(LevelFilter::Trace))
-            .expect("Failed to set logger");
+            .or_else(|_| -> Result<(), ()> {
+                warn!("Logger already set. Ignoring.");
+                Ok(())
+            })
+            .unwrap();
 
         Self {
             driver: Driver {
@@ -62,24 +66,32 @@ impl PVCamDriver {
 extern "C" fn shutdown(driver: *mut Driver) -> DeviceStatusCode {
     info!("HERE in shutdown");
     if let Some(ctx) = unsafe { PVCamDriver::from_driver_mut(driver) } {
-        unsafe { Box::from_raw(ctx) }; // take ownership to free the pointer
+        unsafe { Box::from_raw(ctx) }; // take ownership to free the pointer, free's on drop
         DeviceStatusCode_Device_Ok
     } else {
         DeviceStatusCode_Device_Err
     }
 }
+
 #[no_mangle]
 pub extern "C" fn acquire_driver_init_v0(reporter: logger::ReporterCallback) -> *mut Driver {
-    let context = Box::new(PVCamDriver::new(reporter));
-
-    info!("HERE in init");
-
-    // This follows the pattern used on the C side.
-    // For this to work:
-    // - `PVCAMDriver` must be `repr(C)`
-    // - `shutdown` must correctly recover the `PVCAMDriver` pointer and deallocate it.
-    // - similarly other `Driver` callbacks must correctly recover the `PVCAMDriver` pointer.
-    let ptr = &context.driver as *const Driver as *mut Driver;
-    Box::leak(context);
-    ptr
+    match std::panic::catch_unwind(|| {
+        let context = Box::new(PVCamDriver::new(reporter));
+        info!("HERE in init 😅");
+        // This follows the pattern used elsewhere for the C driver adapters.
+        //
+        // For this to work:
+        // - `PVCAMDriver` must be `repr(C)`
+        // - `shutdown` must correctly recover the `PVCAMDriver` pointer and deallocate it.
+        // - similarly other `Driver` callbacks must correctly recover the `PVCAMDriver` pointer.
+        let ptr = &context.driver as *const Driver as *mut Driver;
+        Box::leak(context);
+        ptr
+    }) {
+        Ok(ptr) => ptr,
+        Err(e) => {
+            error!("🔥Panic🔥");
+            std::ptr::null_mut() as _
+        }
+    }
 }

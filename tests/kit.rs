@@ -1,4 +1,6 @@
+use more_asserts::{assert_ge, assert_gt};
 use std::ffi::{c_char, c_int, CStr};
+use std::ptr::{null_mut, NonNull};
 
 type ReporterCallback = Option<
     unsafe extern "C" fn(
@@ -39,19 +41,84 @@ fn init_and_shutdown() {
     let dylib_path = test_cdylib::build_current_project();
     println!("I'm in {}", dylib_path.display());
 
-    unsafe {
-        let lib =
-            libloading::Library::new(dylib_path).expect("Could not find acquire-driver-pvcam");
+    let lib = unsafe { libloading::Library::new(dylib_path) }
+        .expect("Could not find acquire-driver-pvcam");
+
+    let entry: libloading::Symbol<extern "C" fn(ReporterCallback) -> *mut crate::aq::Driver> =
+        unsafe { lib.get(b"acquire_driver_init_v0") }
+            .expect("Expected to find entry point: acquire_driver_init_v0");
+    let driver = entry(Some(reporter));
+    assert_ne!(driver, null_mut());
+    assert_eq!(
+        unsafe { (*driver).shutdown.unwrap()(driver) },
+        crate::aq::DeviceStatusCode_Device_Ok
+    );
+}
+
+struct TestPvcamDriver {
+    driver: NonNull<aq::Driver>,
+}
+
+/// Generates boiler plate for calling a c-method as a member.
+/// Example: `call(self.driver,shutdown,args)`
+macro_rules! call {
+    ($ptr:expr,$function:ident) => {
+        unsafe {
+            $ptr.as_ref().$function.expect(concat!(
+                "Expected non-NULL method for '",
+                stringify!($function),
+                "'"
+            ))($ptr.as_ptr())
+        }
+    };
+    ($ptr:expr,$function:ident, $($args:tt),+) => {
+        unsafe {
+            $ptr.as_ref().$function.expect(concat!(
+                "Expected non-NULL method for '",
+                stringify!($function),
+                "'"
+            ))($ptr.as_ptr(), $($args:tt),+)
+        }
+    };
+}
+
+impl TestPvcamDriver {
+    fn new() -> Self {
+        let dylib_path = test_cdylib::build_current_project();
+        println!("I'm in {}", dylib_path.display());
+
+        let lib = unsafe { libloading::Library::new(dylib_path) }
+            .expect("Could not find acquire-driver-pvcam");
 
         let entry: libloading::Symbol<extern "C" fn(ReporterCallback) -> *mut crate::aq::Driver> =
-            lib.get(b"acquire_driver_init_v0")
+            unsafe { lib.get(b"acquire_driver_init_v0") }
                 .expect("Expected to find entry point: acquire_driver_init_v0");
-        let driver = entry(Some(reporter));
+
+        Self {
+            driver: NonNull::new(entry(Some(reporter)))
+                .expect("acquire_driver_init_v0() returned NULL"),
+        }
+    }
+
+    fn device_count(&self) -> u32 {
+        call!(self.driver, device_count)
+    }
+}
+
+impl Drop for TestPvcamDriver {
+    fn drop(&mut self) {
+        let driver = self.driver;
         assert_eq!(
-            unsafe { (*driver).shutdown.unwrap()(driver) },
+            call!(self.driver, shutdown),
             crate::aq::DeviceStatusCode_Device_Ok
         );
     }
+}
+
+#[test]
+fn device_count_is_greater_than_zero() {
+    let driver = TestPvcamDriver::new();
+    assert_gt!(driver.device_count(), 0)
 }
 
 pub(crate) mod aq {
