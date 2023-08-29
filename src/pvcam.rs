@@ -1,14 +1,27 @@
+use std::ffi::CStr;
+use std::fmt::{Debug, Display, Formatter};
+use std::sync::{Arc, Once};
+
+use log::{error, info};
+use parking_lot::Mutex;
+
+use crate::capi::pvcam::{pl_pvcam_get_ver, rs_bool};
+
 use super::capi::pvcam::{
     pl_error_code, pl_error_message, pl_pvcam_init, pl_pvcam_uninit, ERROR_MSG_LEN, PV_OK,
 };
-use crate::capi::pvcam::rs_bool;
-use log::error;
-use parking_lot::Mutex;
-use std::ffi::CStr;
-use std::fmt::{Debug, Display, Formatter};
-use thiserror::__private::DisplayAsDisplay;
 
-struct ApiError(i16);
+static mut API: Option<Arc<Mutex<PvcamApiInner>>> = None;
+static INIT: Once = Once::new();
+
+pub(crate) fn api() -> Arc<Mutex<PvcamApiInner>> {
+    INIT.call_once(|| unsafe {
+        API = Some(Arc::new(Mutex::new(PvcamApiInner::new().unwrap())));
+    });
+    unsafe { API.clone().unwrap() }
+}
+
+pub(crate) struct ApiError(i16);
 
 impl ApiError {
     /// Return `None` when `is_ok` is true, otherwise use `pl_error_code()` to retrieve the last
@@ -25,7 +38,7 @@ impl ApiError {
     }
 
     fn into_result<T>(self, t: T) -> Result<T, Self> {
-        if self.0 == PV_OK as i16 {
+        if self.0 == 0 {
             Ok(t)
         } else {
             Err(self)
@@ -50,13 +63,36 @@ impl Display for ApiError {
 
 impl std::error::Error for ApiError {}
 
-struct PvcamApiInner;
+#[derive(Default)]
+struct Version {
+    /// see pl_pvcam_get_ver() for version encoding
+    inner: u16,
+}
 
-struct PvcamApi(Mutex<PvcamApiInner>);
+impl Display for Version {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        let (major, minor, rev) = (self.inner >> 8, (self.inner & 0xff) >> 4, self.inner & 0xf);
+        write!(f, "{major}.{minor}.{rev}")
+    }
+}
+
+pub(crate) struct PvcamApiInner;
 
 impl PvcamApiInner {
     fn new() -> Result<Self, ApiError> {
-        ApiError::from_bool_racy(unsafe { pl_pvcam_init() }).into_result(Self)
+        let out = ApiError::from_bool_racy(unsafe { pl_pvcam_init() }).into_result(Self)?;
+        info!("PVCAM v{} - initialized", out.version()?);
+        Ok(out)
+    }
+
+    fn version(&self) -> Result<Version, ApiError> {
+        let mut ver = Version::default();
+        ApiError::from_bool_racy(unsafe { pl_pvcam_get_ver(&mut ver.inner) }).into_result(ver)
+    }
+
+    pub(crate) fn device_count(&self) -> usize {
+        info!("HERE in device_count");
+        todo!()
     }
 }
 
@@ -70,20 +106,59 @@ impl Drop for PvcamApiInner {
     }
 }
 
+#[derive(Clone)]
+pub(crate) struct PvcamApi(Arc<Mutex<PvcamApiInner>>);
+
 impl PvcamApi {
-    fn new() -> Self {
-        Self(Mutex::new(PvcamApiInner::new()))
+    fn new() -> Result<Self, ApiError> {
+        Ok(Self(Arc::new(Mutex::new(PvcamApiInner::new()?))))
     }
 }
 
-pub(crate) fn maybe_log_last_pvcam_error() {
-    match unsafe { pl_error_code() } {
-        x if x == PV_OK as i16 => { /* no op */ }
-        ecode => {
-            let mut buf = [0i8; ERROR_MSG_LEN as usize];
-            unsafe { pl_error_message(ecode, &mut buf[0]) };
-            let msg = unsafe { CStr::from_ptr(&buf[0]) };
-            error!("PVCAM: {}", msg.to_string_lossy());
+#[cfg(test)]
+mod test {
+    use std::ffi::CStr;
+
+    use log::{debug, error};
+
+    use crate::capi::pvcam::{
+        pl_error_code, pl_error_message, pl_pvcam_init, pl_pvcam_uninit, rs_bool, ERROR_MSG_LEN,
+        PV_OK,
+    };
+    use crate::pvcam::PvcamApi;
+
+    fn maybe_log_last_pvcam_error() {
+        match unsafe { pl_error_code() } {
+            x if x == PV_OK as i16 => { /* no op */ }
+            ecode => {
+                let mut buf = [0i8; ERROR_MSG_LEN as usize];
+                unsafe { pl_error_message(ecode, &mut buf[0]) };
+                let msg = unsafe { CStr::from_ptr(&buf[0]) };
+                error!("PVCAM: {}", msg.to_string_lossy());
+            }
         }
+    }
+
+    #[test]
+    fn test_init_and_uninit_cycle() {
+        // In PVCAM, init should be followed by a shutdown. Similarly, shutdown
+        // must be preceded by an init. This test establishes the correct calling
+        // order works.
+        if let Err(e) = std::panic::catch_unwind(|| {
+            debug!("First init and uninit");
+            assert_eq!(unsafe { pl_pvcam_init() }, PV_OK as rs_bool);
+            assert_eq!(unsafe { pl_pvcam_uninit() }, PV_OK as rs_bool);
+            debug!("Second init and uninit");
+            assert_eq!(unsafe { pl_pvcam_init() }, PV_OK as rs_bool);
+            assert_eq!(unsafe { pl_pvcam_uninit() }, PV_OK as rs_bool);
+        }) {
+            maybe_log_last_pvcam_error();
+            std::panic::resume_unwind(e)
+        }
+    }
+
+    #[test]
+    fn test_managed_api_access() {
+        let _api = PvcamApi::new().unwrap();
     }
 }
