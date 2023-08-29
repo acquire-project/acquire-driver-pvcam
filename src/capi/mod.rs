@@ -1,2 +1,3 @@
 pub(crate) mod acquire;
-// pub(crate) mod pvcam;
+#[cfg(windows)]
+pub(crate) mod pvcam;

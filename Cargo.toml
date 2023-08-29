@@ -12,6 +12,7 @@ crate-type = ["cdylib"]
 log = { version = "0.4", features = ["std"] }
 parking_lot = "0.12"
 no-panic = "0.1.22"
+thiserror = "1.0.47"
 
 [dev-dependencies]
 libloading = "0.8"

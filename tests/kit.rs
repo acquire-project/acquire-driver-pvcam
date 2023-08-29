@@ -1,6 +1,6 @@
-use more_asserts::{assert_ge, assert_gt};
+use more_asserts::assert_gt;
 use std::ffi::{c_char, c_int, CStr};
-use std::ptr::{null_mut, NonNull};
+use std::ptr::NonNull;
 
 type ReporterCallback = Option<
     unsafe extern "C" fn(
@@ -36,25 +36,6 @@ extern "C" fn reporter(
     println!("{sev} {file}:{line} {function} - {msg}");
 }
 
-#[test]
-fn init_and_shutdown() {
-    let dylib_path = test_cdylib::build_current_project();
-    println!("I'm in {}", dylib_path.display());
-
-    let lib = unsafe { libloading::Library::new(dylib_path) }
-        .expect("Could not find acquire-driver-pvcam");
-
-    let entry: libloading::Symbol<extern "C" fn(ReporterCallback) -> *mut crate::aq::Driver> =
-        unsafe { lib.get(b"acquire_driver_init_v0") }
-            .expect("Expected to find entry point: acquire_driver_init_v0");
-    let driver = entry(Some(reporter));
-    assert_ne!(driver, null_mut());
-    assert_eq!(
-        unsafe { (*driver).shutdown.unwrap()(driver) },
-        crate::aq::DeviceStatusCode_Device_Ok
-    );
-}
-
 struct TestPvcamDriver {
     driver: NonNull<aq::Driver>,
 }
@@ -85,7 +66,7 @@ macro_rules! call {
 impl TestPvcamDriver {
     fn new() -> Self {
         let dylib_path = test_cdylib::build_current_project();
-        println!("I'm in {}", dylib_path.display());
+        println!("Loading lib path: \"{}\"", dylib_path.display());
 
         let lib = unsafe { libloading::Library::new(dylib_path) }
             .expect("Could not find acquire-driver-pvcam");
@@ -107,12 +88,16 @@ impl TestPvcamDriver {
 
 impl Drop for TestPvcamDriver {
     fn drop(&mut self) {
-        let driver = self.driver;
         assert_eq!(
             call!(self.driver, shutdown),
             crate::aq::DeviceStatusCode_Device_Ok
         );
     }
+}
+
+#[test]
+fn init_and_shutdown() {
+    let _driver = TestPvcamDriver::new();
 }
 
 #[test]
