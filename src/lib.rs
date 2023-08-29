@@ -20,12 +20,12 @@ impl PVCamDriver {
     fn new() -> Self {
         Self {
             driver: Driver {
-                device_count: Some(device_count), //Some(|driver| -> u32 { todo!() }),
+                device_count: Some(aq_pvcam_device_count), //Some(|driver| -> u32 { todo!() }),
                 describe: None, //Some(|driver, identifier, i| -> DeviceStatusCode { todo!() }),
                 open: None,     //Some(|driver, device_id, out| -> DeviceStatusCode { todo!() }),
                 close: None,    //Some(|driver, device| -> DeviceStatusCode { todo!() }),
 
-                shutdown: Some(cb_shutdown),
+                shutdown: Some(aq_pvcam_shutdown),
             },
         }
     }
@@ -54,7 +54,7 @@ impl PVCamDriver {
 }
 
 #[no_mangle]
-pub extern "C" fn device_count(_driver: *mut Driver) -> u32 {
+pub extern "C" fn aq_pvcam_device_count(_driver: *mut Driver) -> u32 {
     match std::panic::catch_unwind(|| pvcam::api().lock().device_count()) {
         Ok(out) => out as u32,
         Err(_) => {
@@ -65,7 +65,7 @@ pub extern "C" fn device_count(_driver: *mut Driver) -> u32 {
 }
 
 #[no_mangle]
-pub extern "C" fn cb_shutdown(driver: *mut Driver) -> DeviceStatusCode {
+pub extern "C" fn aq_pvcam_shutdown(driver: *mut Driver) -> DeviceStatusCode {
     match std::panic::catch_unwind(|| {
         debug!("HERE in shutdown");
         println!("HERE in shutdown");
@@ -106,10 +106,13 @@ pub extern "C" fn acquire_driver_init_v0(reporter: logger::ReporterCallback) -> 
             &context.driver as *const _ as *const u8
         );
         let ptr = &context.driver as *const Driver as *mut Driver;
-        trace!("returning ptr {:?} with shutdown {:?}", ptr, unsafe {
+        debug!("returning ptr {:?} with shutdown {:?}", ptr, unsafe {
             (*ptr).shutdown
         });
-        trace!("\tdevice_count {:?}", unsafe { (*ptr).device_count });
+        debug!("\tdevice_count {:?}", unsafe { (*ptr).device_count });
+        debug!("\t*** call device_count: {}", unsafe {
+            (*ptr).device_count.unwrap()(ptr)
+        });
         ptr
     }) {
         Ok(ptr) => ptr,

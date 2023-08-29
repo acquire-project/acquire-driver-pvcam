@@ -109,7 +109,7 @@ impl TestPvcamDriver {
 
     fn device_count(&self) -> u32 {
         let x = self.driver.as_ptr();
-        debug!("XXX drop for ptr {:?}", x);
+        debug!("XXX device_count for ptr {:?}", x);
         debug!("XXX  device_count {:?}", unsafe { (*x).device_count });
         unsafe { (*x).device_count.unwrap()(x) }
     }
@@ -117,9 +117,11 @@ impl TestPvcamDriver {
 
 impl Drop for TestPvcamDriver {
     fn drop(&mut self) {
-        call!(self.driver, shutdown);
-        // let x = self.driver.as_ptr();
-        // unsafe { (*x).shutdown.unwrap()(x) };
+        // call!(self.driver, shutdown);
+        let x = self.driver.as_ptr();
+        debug!("XXX drop for ptr {:?}", x);
+        debug!("XXX  shutdown {:?}", unsafe { (*x).shutdown });
+        unsafe { (*x).shutdown.unwrap()(x) };
         // unsafe {
         //     (self.driver)
         //         .as_ref()
