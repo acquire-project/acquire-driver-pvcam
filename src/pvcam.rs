@@ -5,7 +5,7 @@ use std::sync::{Arc, Once};
 use log::{error, info};
 use parking_lot::Mutex;
 
-use crate::capi::pvcam::{pl_pvcam_get_ver, rs_bool};
+use crate::capi::pvcam::{pl_cam_get_total, pl_pvcam_get_ver, rs_bool};
 
 use super::capi::pvcam::{
     pl_error_code, pl_error_message, pl_pvcam_init, pl_pvcam_uninit, ERROR_MSG_LEN, PV_OK,
@@ -37,8 +37,12 @@ impl ApiError {
         })
     }
 
+    fn is_ok(&self) -> bool {
+        self.0 == 0
+    }
+
     fn into_result<T>(self, t: T) -> Result<T, Self> {
-        if self.0 == 0 {
+        if self.is_ok() {
             Ok(t)
         } else {
             Err(self)
@@ -90,9 +94,10 @@ impl PvcamApiInner {
         ApiError::from_bool_racy(unsafe { pl_pvcam_get_ver(&mut ver.inner) }).into_result(ver)
     }
 
-    pub(crate) fn device_count(&self) -> usize {
+    pub(crate) fn device_count(&self) -> Result<usize, ApiError> {
         info!("HERE in device_count");
-        todo!()
+        let mut n = 0;
+        ApiError::from_bool_racy(unsafe { pl_cam_get_total(&mut n) }).into_result(n as usize)
     }
 }
 

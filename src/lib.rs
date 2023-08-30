@@ -53,9 +53,8 @@ impl PVCamDriver {
     }
 }
 
-#[no_mangle]
-pub extern "C" fn aq_pvcam_device_count(_driver: *mut Driver) -> u32 {
-    match std::panic::catch_unwind(|| pvcam::api().lock().device_count()) {
+extern "C" fn aq_pvcam_device_count(_driver: *mut Driver) -> u32 {
+    match std::panic::catch_unwind(|| pvcam::api().lock().device_count().unwrap()) {
         Ok(out) => out as u32,
         Err(_) => {
             error!("🔥Panic🔥");
@@ -64,11 +63,9 @@ pub extern "C" fn aq_pvcam_device_count(_driver: *mut Driver) -> u32 {
     }
 }
 
-#[no_mangle]
-pub extern "C" fn aq_pvcam_shutdown(driver: *mut Driver) -> DeviceStatusCode {
+extern "C" fn aq_pvcam_shutdown(driver: *mut Driver) -> DeviceStatusCode {
     match std::panic::catch_unwind(|| {
         debug!("HERE in shutdown");
-        println!("HERE in shutdown");
         let ctx = unsafe { PVCamDriver::from_driver_mut(driver) }.unwrap();
         drop(unsafe { Box::from_raw(ctx) });
     }) {
@@ -109,10 +106,10 @@ pub extern "C" fn acquire_driver_init_v0(reporter: logger::ReporterCallback) -> 
         debug!("returning ptr {:?} with shutdown {:?}", ptr, unsafe {
             (*ptr).shutdown
         });
-        debug!("\tdevice_count {:?}", unsafe { (*ptr).device_count });
-        debug!("\t*** call device_count: {}", unsafe {
-            (*ptr).device_count.unwrap()(ptr)
-        });
+        // debug!("\tdevice_count {:?}", unsafe { (*ptr).device_count });
+        // debug!("\t*** call device_count: {}", unsafe {
+        //     (*ptr).device_count.unwrap()(ptr)
+        // });
         ptr
     }) {
         Ok(ptr) => ptr,

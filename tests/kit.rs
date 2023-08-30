@@ -1,6 +1,7 @@
 use std::ffi::{c_char, c_int, CStr};
 use std::ptr::NonNull;
 
+use dlopen::wrapper::{Container, WrapperApi};
 use log::{debug, error, info};
 use more_asserts::assert_gt;
 
@@ -59,6 +60,11 @@ extern "C" fn reporter(
     // println!("{sev} {file}:{line} {function} - {msg}");
 }
 
+#[derive(dlopen_derive::WrapperApi)]
+struct Api {
+    acquire_driver_init_v0: unsafe extern "C" fn(reporter: ReporterCallback) -> *mut Driver,
+}
+
 struct TestPvcamDriver {
     driver: NonNull<Driver>,
 }
@@ -93,14 +99,17 @@ impl TestPvcamDriver {
         let dylib_path = test_cdylib::build_current_project();
         debug!("Loading lib path: \"{}\"", dylib_path.display());
 
-        let lib = unsafe { libloading::Library::new(dylib_path) }
-            .expect("Could not find acquire-driver-pvcam");
+        let api: Container<Api> =
+            unsafe { Container::load(dylib_path) }.expect("Could not find acquire-driver-pvcam");
 
-        let entry: libloading::Symbol<extern "C" fn(ReporterCallback) -> *mut Driver> =
-            unsafe { lib.get(b"acquire_driver_init_v0") }
-                .expect("Expected to find entry point: acquire_driver_init_v0");
+        // let lib = unsafe { libloading::Library::new(dylib_path) }
+        //     .expect("Could not find acquire-driver-pvcam");
 
-        let ptr = entry(Some(reporter));
+        // let entry: libloading::Symbol<extern "C" fn(ReporterCallback) -> *mut Driver> =
+        //     unsafe { lib.get(b"acquire_driver_init_v0") }
+        //         .expect("Expected to find entry point: acquire_driver_init_v0");
+
+        let ptr = unsafe { api.acquire_driver_init_v0(Some(reporter)) };
         let driver = NonNull::new(ptr).expect("acquire_driver_init_v0() returned NULL");
         let out = Self { driver };
         info!("out: {:?} ptr {}", out.driver, ptr as usize);
