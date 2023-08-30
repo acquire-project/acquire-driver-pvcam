@@ -1,11 +1,15 @@
-use std::ffi::CStr;
+use std::ffi::{c_char, CStr};
 use std::fmt::{Debug, Display, Formatter};
 use std::sync::{Arc, Once};
 
+use crate::capi::acquire::DeviceIdentifier;
 use log::{error, info};
 use parking_lot::Mutex;
+use static_assertions::const_assert;
 
-use crate::capi::pvcam::{pl_cam_get_total, pl_pvcam_get_ver, rs_bool};
+use crate::capi::pvcam::{
+    pl_cam_get_name, pl_cam_get_total, pl_pvcam_get_ver, rs_bool, CAM_NAME_LEN,
+};
 
 use super::capi::pvcam::{
     pl_error_code, pl_error_message, pl_pvcam_init, pl_pvcam_uninit, ERROR_MSG_LEN, PV_OK,
@@ -98,6 +102,21 @@ impl PvcamApiInner {
         info!("HERE in device_count");
         let mut n = 0;
         ApiError::from_bool_racy(unsafe { pl_cam_get_total(&mut n) }).into_result(n as usize)
+    }
+
+    pub fn describe(
+        &self,
+        i_camera: i16,
+        descriptor: &mut DeviceIdentifier,
+    ) -> Result<(), ApiError> {
+        let name = {
+            const_assert!(CAM_NAME_LEN<std::mem::size_of())
+            let mut buf = [0; CAM_NAME_LEN as usize];
+            ApiError::from_bool_racy(unsafe { pl_cam_get_name(i_camera, &mut buf[0]) })
+                .into_result(())?;
+            unsafe { CStr::from_ptr(&buf[0]) }
+        };
+        todo!()
     }
 }
 
