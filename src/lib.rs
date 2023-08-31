@@ -1,3 +1,4 @@
+use capi::acquire::{Device, DeviceIdentifier};
 use log::{debug, error, info, trace, warn, LevelFilter};
 
 use memoffset::offset_of;
@@ -20,11 +21,10 @@ impl PVCamDriver {
     fn new() -> Self {
         Self {
             driver: Driver {
-                device_count: Some(aq_pvcam_device_count), //Some(|driver| -> u32 { todo!() }),
-                describe: None, //Some(|driver, identifier, i| -> DeviceStatusCode { todo!() }),
-                open: None,     //Some(|driver, device_id, out| -> DeviceStatusCode { todo!() }),
-                close: None,    //Some(|driver, device| -> DeviceStatusCode { todo!() }),
-
+                device_count: Some(aq_pvcam_device_count),
+                describe: Some(aq_pvcam_describe),
+                open: Some(aq_pvcam_open),
+                close: Some(aq_pvcam_close),
                 shutdown: Some(aq_pvcam_shutdown),
             },
         }
@@ -59,6 +59,56 @@ extern "C" fn aq_pvcam_device_count(_driver: *mut Driver) -> u32 {
         Err(_) => {
             error!("🔥Panic🔥");
             0
+        }
+    }
+}
+
+extern "C" fn aq_pvcam_describe(
+    _driver: *const Driver,
+    identifier: *mut DeviceIdentifier,
+    i_camera: u64,
+) -> u32 {
+    match std::panic::catch_unwind(|| {
+        pvcam::api()
+            .lock()
+            .describe(i_camera as _, &mut unsafe { *identifier })
+            .unwrap()
+    }) {
+        Ok(out) => DeviceStatusCode_Device_Ok,
+        Err(_) => {
+            error!("🔥Panic🔥");
+            DeviceStatusCode_Device_Err
+        }
+    }
+}
+
+extern "C" fn aq_pvcam_open(
+    _: *mut Driver,
+    device_id: u64,
+    device: *mut *mut Device,
+) -> DeviceStatusCode {
+    match std::panic::catch_unwind(|| {
+        debug!("HERE in aq_pvcam_open");
+        let ptr = pvcam::api().lock().open(device_id).unwrap();
+        unsafe { *device = ptr };
+    }) {
+        Ok(()) => DeviceStatusCode_Device_Ok,
+        Err(_) => {
+            error!("🔥Panic🔥");
+            DeviceStatusCode_Device_Err
+        }
+    }
+}
+
+extern "C" fn aq_pvcam_close(_: *mut Driver, device: *mut Device) -> DeviceStatusCode {
+    match std::panic::catch_unwind(|| {
+        debug!("HERE in aq_pvcam_close");
+        unimplemented!()
+    }) {
+        Ok(()) => DeviceStatusCode_Device_Ok,
+        Err(_) => {
+            error!("🔥Panic🔥");
+            DeviceStatusCode_Device_Err
         }
     }
 }

@@ -2,13 +2,14 @@ use std::ffi::{c_char, CStr};
 use std::fmt::{Debug, Display, Formatter};
 use std::sync::{Arc, Once};
 
-use crate::capi::acquire::DeviceIdentifier;
+use crate::capi::acquire::{DeviceIdentifier, DeviceKind_DeviceKind_Camera};
 use log::{error, info};
 use parking_lot::Mutex;
 use static_assertions::const_assert;
 
 use crate::capi::pvcam::{
-    pl_cam_get_name, pl_cam_get_total, pl_pvcam_get_ver, rs_bool, CAM_NAME_LEN,
+    pl_cam_close, pl_cam_get_name, pl_cam_get_total, pl_cam_open, pl_pvcam_get_ver, rs_bool,
+    CAM_NAME_LEN, PL_OPEN_MODES_OPEN_EXCLUSIVE,
 };
 
 use super::capi::pvcam::{
@@ -39,6 +40,10 @@ impl ApiError {
         } else {
             unsafe { pl_error_code() }
         })
+    }
+
+    fn check_last() -> Self {
+        Self(unsafe { pl_error_code() })
     }
 
     fn is_ok(&self) -> bool {
@@ -109,14 +114,21 @@ impl PvcamApiInner {
         i_camera: i16,
         descriptor: &mut DeviceIdentifier,
     ) -> Result<(), ApiError> {
-        let name = {
-            const_assert!(CAM_NAME_LEN<std::mem::size_of())
-            let mut buf = [0; CAM_NAME_LEN as usize];
-            ApiError::from_bool_racy(unsafe { pl_cam_get_name(i_camera, &mut buf[0]) })
-                .into_result(())?;
-            unsafe { CStr::from_ptr(&buf[0]) }
-        };
-        todo!()
+        assert!(i_camera >= 0);
+        descriptor.device_id = i_camera as _;
+        descriptor.kind = DeviceKind_DeviceKind_Camera;
+        ApiError::from_bool_racy(unsafe { pl_cam_get_name(i_camera, &mut descriptor.name[0]) })
+            .into_result(())?;
+        Ok(())
+    }
+
+    pub fn open(&self, device_id: u64) -> Result<*mut crate::capi::acquire::Device, ApiError> {
+        let camera = Box::new(Camera::new(device_id as _)?);
+        // Need to check for errors even after a successful open
+        ApiError::check_last().into_result(())?;
+
+        // HERE
+        unimplemented!()
     }
 }
 
@@ -127,6 +139,38 @@ impl Drop for PvcamApiInner {
             .unwrap_or_else(|e| {
                 error!("pl_pvcam_uninit() failed {}", e);
             });
+    }
+}
+
+struct Camera {
+    hcam: i16,
+}
+
+impl Camera {
+    fn new(device_id: i16) -> Result<Self, ApiError> {
+        // get name
+        let mut camera_name = [0; CAM_NAME_LEN as _];
+        ApiError::from_bool_racy(unsafe { pl_cam_get_name(device_id as _, &mut camera_name[0]) })
+            .into_result(())?;
+
+        // call open
+        let mut hcam = 0;
+        ApiError::from_bool_racy(unsafe {
+            pl_cam_open(
+                &mut camera_name[0],
+                &mut hcam,
+                PL_OPEN_MODES_OPEN_EXCLUSIVE as _,
+            )
+        })
+        .into_result(Self { hcam })
+    }
+}
+
+impl Drop for Camera {
+    fn drop(&mut self) {
+        ApiError::from_bool_racy(unsafe { pl_cam_close(self.hcam) })
+            .into_result(())
+            .unwrap_or_else(|e| error!("{}", e));
     }
 }
 
