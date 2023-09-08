@@ -1,9 +1,15 @@
 use std::ffi::{c_char, CStr};
 use std::fmt::{Debug, Display, Formatter};
+use std::ptr::{null, null_mut};
 use std::sync::{Arc, Once};
 
-use crate::capi::acquire::{DeviceIdentifier, DeviceKind_DeviceKind_Camera};
+use crate::capi::acquire::{
+    Camera, CameraProperties, CameraPropertyMetadata, Device, DeviceIdentifier,
+    DeviceKind_DeviceKind_Camera, DeviceState_DeviceState_AwaitingConfiguration, DeviceStatusCode,
+    ImageInfo, ImageShape,
+};
 use log::{error, info};
+use memoffset::offset_of;
 use parking_lot::Mutex;
 use static_assertions::const_assert;
 
@@ -109,26 +115,35 @@ impl PvcamApiInner {
         ApiError::from_bool_racy(unsafe { pl_cam_get_total(&mut n) }).into_result(n as usize)
     }
 
-    pub fn describe(
-        &self,
-        i_camera: i16,
-        descriptor: &mut DeviceIdentifier,
-    ) -> Result<(), ApiError> {
+    pub fn describe(&self, i_camera: i16) -> Result<DeviceIdentifier, ApiError> {
         assert!(i_camera >= 0);
-        descriptor.device_id = i_camera as _;
-        descriptor.kind = DeviceKind_DeviceKind_Camera;
+        let mut descriptor = DeviceIdentifier {
+            driver_id: i_camera as _,
+            device_id: 0, // will get filled in by runtime
+            kind: DeviceKind_DeviceKind_Camera,
+            name: [0; 256],
+        };
         ApiError::from_bool_racy(unsafe { pl_cam_get_name(i_camera, &mut descriptor.name[0]) })
-            .into_result(())?;
-        Ok(())
+            .into_result(descriptor)
     }
 
-    pub fn open(&self, device_id: u64) -> Result<*mut crate::capi::acquire::Device, ApiError> {
-        let camera = Box::new(Camera::new(device_id as _)?);
-        // Need to check for errors even after a successful open
-        ApiError::check_last().into_result(())?;
+    pub fn open(&self, device_id: u64) -> Result<Box<PvcamCamera>, ApiError> {
+        // FIXME: lifetime of device? should be bounded by driver? pedantic
+        Ok(Box::new(PvcamCamera::new(device_id as _)?))
 
-        // HERE
-        unimplemented!()
+        // // Need to check for errors even after a successful open
+        // ApiError::check_last().into_result(())?;
+        // let camera = Box::leak(camera);
+        // dbg!(camera as *const PvcamCamera);
+        // Ok(&camera.api.device as *const Device as *mut _)
+    }
+
+    pub fn close(&self, device: &mut Device) -> Result<(), ApiError> {
+        let o = offset_of!(PvcamCamera, api) + offset_of!(Camera, device);
+        let ptr = unsafe { (device as *mut Device as *mut u8).offset(-(o as isize)) };
+        dbg!(ptr as *const PvcamCamera);
+        drop(unsafe { Box::from_raw(ptr as *mut PvcamCamera) });
+        Ok(())
     }
 }
 
@@ -142,12 +157,90 @@ impl Drop for PvcamApiInner {
     }
 }
 
-struct Camera {
+extern "C" fn aq_pvcam_set(
+    camera: *mut Camera,
+    settings: *mut CameraProperties,
+) -> DeviceStatusCode {
+    let camera = PvcamCamera::from_device_ptr_mut(camera);
+    // exposure time
+
+    todo!()
+}
+
+extern "C" fn aq_pvcam_get(
+    camera: *const Camera,
+    settings: *mut CameraProperties,
+) -> DeviceStatusCode {
+    todo!()
+}
+
+extern "C" fn aq_pvcam_get_meta(
+    camera: *const Camera,
+    meta: *mut CameraPropertyMetadata,
+) -> DeviceStatusCode {
+    todo!()
+}
+
+extern "C" fn aq_pvcam_get_shape(
+    camera: *const Camera,
+    shape: *mut ImageShape,
+) -> DeviceStatusCode {
+    todo!()
+}
+
+extern "C" fn aq_pvcam_start(camera: *mut Camera) -> DeviceStatusCode {
+    todo!()
+}
+
+extern "C" fn aq_pvcam_stop(camera: *mut Camera) -> DeviceStatusCode {
+    todo!()
+}
+
+extern "C" fn aq_pvcam_execute_trigger(camera: *mut Camera) -> DeviceStatusCode {
+    todo!()
+}
+
+extern "C" fn aq_pvcam_get_frame(
+    camera: *mut Camera,
+    im: *mut ::std::os::raw::c_void,
+    nbytes: *mut usize,
+    info: *mut ImageInfo,
+) -> DeviceStatusCode {
+    todo!()
+}
+
+#[repr(C)]
+pub(crate) struct PvcamCamera {
+    api: Camera,
     hcam: i16,
 }
 
-impl Camera {
+impl PvcamCamera {
+    /// Opens a camera via the PVCAM Api and initializes the Acquire Camera
+    /// interface.
     fn new(device_id: i16) -> Result<Self, ApiError> {
+        let api = Camera {
+            // This gets filled in by the acquire runtime
+            device: Device {
+                identifier: DeviceIdentifier {
+                    driver_id: 0,
+                    device_id: 0,
+                    kind: DeviceKind_DeviceKind_Camera,
+                    name: [0; 256],
+                },
+                driver: null_mut(),
+            },
+            state: DeviceState_DeviceState_AwaitingConfiguration,
+            set: Some(aq_pvcam_set),
+            get: Some(aq_pvcam_get),
+            get_meta: Some(aq_pvcam_get_meta),
+            get_shape: Some(aq_pvcam_get_shape),
+            start: Some(aq_pvcam_start),
+            stop: Some(aq_pvcam_stop),
+            execute_trigger: Some(aq_pvcam_execute_trigger),
+            get_frame: Some(aq_pvcam_get_frame),
+        };
+
         // get name
         let mut camera_name = [0; CAM_NAME_LEN as _];
         ApiError::from_bool_racy(unsafe { pl_cam_get_name(device_id as _, &mut camera_name[0]) })
@@ -162,11 +255,30 @@ impl Camera {
                 PL_OPEN_MODES_OPEN_EXCLUSIVE as _,
             )
         })
-        .into_result(Self { hcam })
+        .into_result(Self { api, hcam })
+    }
+
+    fn from_camera_ptr(device: *const Device) -> &'static Self {
+        assert!(!device.is_null());
+        let o = offset_of!(PvcamCamera, api);
+        let ptr = unsafe { (device as *const Device as *const u8).offset(-(o as isize)) };
+        unsafe { (ptr as *const PvcamCamera).as_ref().unwrap() }
+    }
+
+    fn from_camera_ptr_mut(device: *mut Device) -> &'static mut Self {
+        assert!(!device.is_null());
+        let o = offset_of!(PvcamCamera, api);
+        let ptr = unsafe { (device as *mut Device as *mut u8).offset(-(o as isize)) };
+        unsafe { (ptr as *mut PvcamCamera).as_mut().unwrap() }
+    }
+
+    pub(crate) fn as_device_ptr_mut(&mut self) -> *mut Device {
+        dbg!(self as *const PvcamCamera);
+        &self.api.device as *const Device as *mut _
     }
 }
 
-impl Drop for Camera {
+impl Drop for PvcamCamera {
     fn drop(&mut self) {
         ApiError::from_bool_racy(unsafe { pl_cam_close(self.hcam) })
             .into_result(())

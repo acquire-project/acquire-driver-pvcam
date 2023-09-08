@@ -1,3 +1,4 @@
+#![allow(unused_imports)] // FIXME: (nclack) REMOVE ME
 use capi::acquire::{Device, DeviceIdentifier};
 use log::{debug, error, info, trace, warn, LevelFilter};
 
@@ -63,18 +64,15 @@ extern "C" fn aq_pvcam_device_count(_driver: *mut Driver) -> u32 {
     }
 }
 
-extern "C" fn aq_pvcam_describe(
+unsafe extern "C" fn aq_pvcam_describe(
     _driver: *const Driver,
     identifier: *mut DeviceIdentifier,
     i_camera: u64,
-) -> u32 {
-    match std::panic::catch_unwind(|| {
-        pvcam::api()
-            .lock()
-            .describe(i_camera as _, &mut unsafe { *identifier })
-            .unwrap()
+) -> i32 {
+    match std::panic::catch_unwind(|| unsafe {
+        *identifier = pvcam::api().lock().describe(i_camera as _).unwrap();
     }) {
-        Ok(out) => DeviceStatusCode_Device_Ok,
+        Ok(_) => DeviceStatusCode_Device_Ok,
         Err(_) => {
             error!("🔥Panic🔥");
             DeviceStatusCode_Device_Err
@@ -89,7 +87,8 @@ extern "C" fn aq_pvcam_open(
 ) -> DeviceStatusCode {
     match std::panic::catch_unwind(|| {
         debug!("HERE in aq_pvcam_open");
-        let ptr = pvcam::api().lock().open(device_id).unwrap();
+        let camera = pvcam::api().lock().open(device_id).unwrap();
+        let ptr = Box::leak(camera).as_device_ptr_mut();
         unsafe { *device = ptr };
     }) {
         Ok(()) => DeviceStatusCode_Device_Ok,
@@ -103,7 +102,7 @@ extern "C" fn aq_pvcam_open(
 extern "C" fn aq_pvcam_close(_: *mut Driver, device: *mut Device) -> DeviceStatusCode {
     match std::panic::catch_unwind(|| {
         debug!("HERE in aq_pvcam_close");
-        unimplemented!()
+        pvcam::api().lock().close(unsafe { &mut *device }).unwrap();
     }) {
         Ok(()) => DeviceStatusCode_Device_Ok,
         Err(_) => {
