@@ -5,20 +5,26 @@ endif ()
 set(tgt acquire-driver-pvcam)
 
 if (TARGET pvcam)
-    add_library(${tgt} MODULE pvcam.cpp)
+    add_library(${tgt} MODULE
+            pvcam.camera.c
+            pvcam.prelude.h
+            pvcam.driver.c
+            pvcam.camera.h)
     target_link_libraries(${tgt} PRIVATE
+            pvcam
             acquire-core-logger
             acquire-core-platform
             acquire-device-kit
-            pvcam
+            acquire-device-hal
             )
 else ()
-    add_library(${tgt} MODULE unsupported.driver.c)
+    add_library(${tgt} MODULE
+            unsupported.driver.c
+            )
     target_link_libraries(${tgt} PRIVATE
             acquire-core-logger
-            acquire-core-platform
             acquire-device-kit
-            )
+    )
 endif ()
 
 target_add_git_versioning(${tgt})
