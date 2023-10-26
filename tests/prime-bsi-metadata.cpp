@@ -1,3 +1,5 @@
-//
-// Created by Alan Liddell on 2023-10-20.
-//
+int
+main()
+{
+    return 0;
+}

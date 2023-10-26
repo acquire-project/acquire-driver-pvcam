@@ -16,6 +16,7 @@ else()
         #
         set(tests
                 list-devices
+                unit-tests
                 prime-bsi-metadata
                 prime-bsi-one-video-stream
                 prime-bsi-repeat-start
@@ -40,11 +41,9 @@ else()
                 )
 
                 add_test(NAME test-${tgt} COMMAND ${tgt})
-                if(name MATCHES "^oryx")
+                if(name MATCHES "^primt-bsi")
                         set_tests_properties(test-${tgt} PROPERTIES FIXTURES_REQUIRED setup-oryx)
-                        set_tests_properties(test-${tgt} PROPERTIES LABELS "acquire-driver-pvcam;oryx")
-                elseif(name MATCHES "^blackfly")
-                        set_tests_properties(test-${tgt} PROPERTIES LABELS "acquire-driver-pvcam;blackfly")
+                        set_tests_properties(test-${tgt} PROPERTIES LABELS "acquire-driver-pvcam;prime-bsi")
                 else() # list-devices
                         set_tests_properties(test-${tgt} PROPERTIES LABELS "acquire-driver-pvcam;blackfly;oryx")
                 endif()

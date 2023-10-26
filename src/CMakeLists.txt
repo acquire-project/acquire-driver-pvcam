@@ -5,11 +5,7 @@ endif ()
 set(tgt acquire-driver-pvcam)
 
 if (TARGET pvcam)
-    add_library(${tgt} MODULE
-            pvcam.camera.c
-            pvcam.prelude.h
-            pvcam.driver.c
-            pvcam.camera.h)
+    add_library(${tgt} MODULE pvcam.cpp)
     target_link_libraries(${tgt} PRIVATE
             pvcam
             acquire-core-logger
