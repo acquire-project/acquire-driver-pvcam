@@ -88,7 +88,60 @@ setup(AcquireRuntime* runtime)
 void
 acquire(AcquireRuntime* runtime)
 {
+    AcquireProperties props = {};
+    OK(acquire_get_configuration(runtime, &props));
+
+    const auto next = [](VideoFrame* cur) -> VideoFrame* {
+        return (VideoFrame*)(((uint8_t*)cur) + cur->bytes_of_frame);
+    };
+
+    const auto consumed_bytes = [](const VideoFrame* const cur,
+                                   const VideoFrame* const end) -> size_t {
+        return (uint8_t*)end - (uint8_t*)cur;
+    };
+
+    clock clock_{};
+    static double time_limit_ms = 20000.0;
+    clock_init(&clock_);
+    clock_shift_ms(&clock_, time_limit_ms);
     OK(acquire_start(runtime));
+
+    uint64_t nframes = 0;
+    while (nframes < props.video[0].max_frame_count) {
+        clock throttle{};
+        clock_init(&throttle);
+        EXPECT(clock_cmp_now(&clock_) < 0,
+               "Timeout at %f ms",
+               clock_toc_ms(&clock_) + time_limit_ms);
+        VideoFrame *beg, *end, *cur;
+        OK(acquire_map_read(runtime, 0, &beg, &end));
+
+        for (cur = beg; cur < end; cur = next(cur)) {
+            LOG("stream %d counting frame w id %d", 0, cur->frame_id);
+            CHECK(cur->shape.dims.width ==
+                  props.video[0].camera.settings.shape.x);
+            CHECK(cur->shape.dims.height ==
+                  props.video[0].camera.settings.shape.y);
+            ++nframes;
+        }
+
+        {
+            size_t n = consumed_bytes(beg, end);
+            OK(acquire_unmap_read(runtime, 0, n));
+            if (n)
+                LOG("stream %d consumed bytes %d", 0, n);
+        }
+
+        clock_sleep_ms(&throttle, 100.0f);
+
+        LOG("stream %d nframes %d. remaining time %f s",
+            0,
+            nframes,
+            -1e-3 * clock_toc_ms(&clock_));
+    }
+
+    CHECK(nframes == props.video[0].max_frame_count);
+
     OK(acquire_abort(runtime));
     LOG("OK");
 }
