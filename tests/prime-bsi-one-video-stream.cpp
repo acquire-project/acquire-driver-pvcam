@@ -75,7 +75,7 @@ setup(AcquireRuntime* runtime)
 
     props.video[0].camera.settings.binning = 1;
     props.video[0].camera.settings.pixel_type = SampleType_u8;
-    props.video[0].camera.settings.shape = { .x = 1920, .y = 1200 };
+    props.video[0].camera.settings.shape = { .x = 1920, .y = 1280 };
     props.video[0].camera.settings.exposure_time_us = 1e4;
     props.video[0].max_frame_count = 10;
 
