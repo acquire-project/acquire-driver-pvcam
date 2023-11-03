@@ -24,6 +24,7 @@ else()
                 prime-bsi-configure-properties
                 prime-bsi-configure-triggering
                 prime-bsi-abort-while-waiting-for-trigger
+                pvtest
         )
 
         foreach(name ${tests})
@@ -38,6 +39,7 @@ else()
                         acquire-core-logger
                         acquire-core-platform
                         acquire-video-runtime
+                        pvcam
                 )
 
                 add_test(NAME test-${tgt} COMMAND ${tgt})
