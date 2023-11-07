@@ -58,7 +58,7 @@ setup(AcquireRuntime* runtime)
 
     DEVOK(device_manager_select(dm,
                                 DeviceKind_Camera,
-                                SIZED(".*PMPCIECam.*") - 1,
+                                SIZED(".*PMUSBCam00.*") - 1,
                                 &props.video[0].camera.identifier));
     DEVOK(device_manager_select(dm,
                                 DeviceKind_Storage,
@@ -76,7 +76,7 @@ setup(AcquireRuntime* runtime)
     props.video[0].camera.settings.pixel_type = SampleType_u8;
     props.video[0].camera.settings.shape = { .x = 1920, .y = 1280 };
     props.video[0].camera.settings.exposure_time_us = 1e4;
-    props.video[0].max_frame_count = 10;
+    props.video[0].max_frame_count = 100;
 
     OK(acquire_configure(runtime, &props));
 

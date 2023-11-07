@@ -32,15 +32,25 @@ struct CameraContext
     std::mutex api_mtx;
     std::mutex frame_mtx;
     std::atomic<ulong64> frames_acquired{ 0 };
+    std::condition_variable cv;
+    uint8_t** frame;
 };
 
 void PV_DECL
 callback_handler(FRAME_INFO* frame_info, void* context)
 {
     auto* ctx = (CameraContext*)context;
-    ++ctx->frames_acquired;
-    std::cout << "callback_handler (" << (int)(++ctx->frames_acquired)
-              << " frames acquired)" << std::endl;
+    {
+        std::scoped_lock<std::mutex> lock(ctx->api_mtx);
+        PVCAM(pl_exp_get_oldest_frame(ctx->hcam, (void**)(ctx->frame)));
+        PVCAM(pl_exp_unlock_oldest_frame(ctx->hcam));
+    }
+    {
+        std::unique_lock<std::mutex> lock(ctx->frame_mtx);
+        std::cout << "callback_handler (" << (int)(++ctx->frames_acquired)
+                  << " frames acquired)" << std::endl;
+        ctx->cv.notify_one();
+    }
 }
 
 void
@@ -75,11 +85,11 @@ start_camera(CameraContext* ctx)
 
     ulong64 frame_buffer_size;
     PVCAM(pl_get_param(
-      ctx->hcam, PARAM_FRAME_BUFFER_SIZE, ATTR_CURRENT, &frame_buffer_size));
+      ctx->hcam, PARAM_FRAME_BUFFER_SIZE, ATTR_DEFAULT, &frame_buffer_size));
 
     buf = new uint8_t[frame_buffer_size];
 
-    PVCAM(pl_exp_start_cont(ctx->hcam, buf, frame_buffer_size));
+    PVCAM(pl_exp_start_cont(ctx->hcam, buf, (uns32)frame_buffer_size));
     std::cout << "after start" << std::endl;
 }
 
@@ -96,14 +106,20 @@ main()
 {
     PVCAM(pl_pvcam_init());
 
-    CameraContext ctx;
+    CameraContext ctx{
+        .frame = new uint8_t*(),
+    };
     open_camera(&ctx);
 
     start_camera(&ctx);
 
-    while (ctx.frames_acquired < 100) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(10));
-    }
+    int16 status;
+    uns32 bytes_arrived, buffer_cnt;
+    PVCAM(
+      pl_exp_check_cont_status(ctx.hcam, &status, &bytes_arrived, &buffer_cnt));
+
+    std::unique_lock<std::mutex> lock(ctx.frame_mtx);
+    ctx.cv.wait(lock, [&ctx] { return ctx.frames_acquired >= 100; });
 
     stop_camera(&ctx);
 
@@ -113,5 +129,6 @@ main()
 
     std::cout << ctx.frames_acquired << " frames acquired" << std::endl;
 
+    delete[] ctx.frame;
     delete[] buf;
 }
