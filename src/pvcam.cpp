@@ -90,6 +90,7 @@ rgn_type_to_camera_properties(rgn_type& roi, CameraProperties* properties)
     properties->offset.y = roi.p1;
     properties->shape.x = roi.s2 - roi.s1 + 1;
     properties->shape.y = roi.p2 - roi.p1 + 1;
+    // sbin and pbin can be different
     properties->binning = (uint8_t)roi.pbin;
 }
 
@@ -488,8 +489,6 @@ PVCamCamera::start()
     PVCAM(pl_exp_check_cont_status(hcam, &status, &byte_cnt, &buffer_cnt),
           *pvcam_api_mutex_);
 
-    LOGE(
-      "Status: %d; byte_cnt: %d; buffer_cnt: %d", status, byte_cnt, buffer_cnt);
     started_ = true;
 }
 
@@ -539,9 +538,15 @@ PVCamCamera::get_frame(void* im, size_t* nbytes, struct ImageInfo* info)
     std::unique_lock<std::mutex> frame_lock(*frame_mutex_);
 
     // callback will increment frames_available
-    callback_context_.cv.wait(
-      frame_lock, [&] { return callback_context_.frames_available > 0; });
+    callback_context_.cv.wait_for(
+      frame_lock, std::chrono::milliseconds(10), [&] {
+          return callback_context_.frames_available > 0;
+      });
 
+    if (0 == callback_context_.frames_available) {
+        *nbytes = 0;
+        return;
+    }
     --callback_context_.frames_available;
 
     uint32_t width = last_known_settings_.shape.x,
@@ -592,6 +597,12 @@ void
 PVCamCamera::maybe_set_roi_and_binning_(CameraProperties* properties)
 {
     CHECK(properties);
+
+    // a couple of edge cases to handle
+    if (properties->shape.x == 0 || properties->shape.y == 0 ||
+        properties->binning == 0) {
+        return;
+    }
 
     camera_properties_to_rgn_type(properties, roi_);
 }
@@ -660,15 +671,7 @@ PVCamCamera::maybe_get_exposure_time_(CameraProperties* properties) const
 void
 PVCamCamera::maybe_get_roi_and_binning_(CameraProperties* properties) const
 {
-    properties->offset = {
-        .x = roi_.s1,
-        .y = roi_.p1,
-    };
-    properties->shape = {
-        .x = (uint32_t)(roi_.s2 - roi_.s1 + 1),
-        .y = (uint32_t)(roi_.p2 - roi_.p1 + 1),
-    };
-    properties->binning = roi_.pbin;
+    rgn_type_to_camera_properties(roi_, properties);
 
     try {
         PVCAM(pl_get_param(hcam, PARAM_ROI, ATTR_CURRENT, &roi_),
@@ -1139,33 +1142,6 @@ acquire_driver_init_v0(acquire_reporter_t reporter)
     }
     return nullptr;
 }
-
-#ifndef NO_UNIT_TESTS
-#ifdef _WIN32
-#define acquire_export __declspec(dllexport)
-#else
-#define acquire_export
-#endif
-
-extern "C"
-{
-    acquire_export int unit_test__init()
-    {
-        try {
-            PVCamDriver driver;
-        } catch (const std::exception& exc) {
-            LOGE("Failed to init: %s", exc.what());
-            return 0;
-        } catch (...) {
-            LOGE("Failed to init: (unknown).");
-            return 0;
-        }
-
-        return 1;
-    }
-}
-
-#endif
 
 /**
  * NOTE (aliddell): I observed that API calls between `start` and `get_frame`
