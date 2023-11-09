@@ -75,23 +75,30 @@ check_pvcam_camera_id(uint64_t id)
 void
 camera_properties_to_rgn_type(CameraProperties* properties, rgn_type& roi)
 {
-    roi.s1 = (uns16)properties->offset.x;
-    roi.s2 = (uns16)(properties->offset.x + properties->shape.x - 1);
-    roi.sbin = (uns16)properties->binning;
-    roi.p1 = (uns16)properties->offset.y;
-    roi.p2 = (uns16)(properties->offset.y + properties->shape.y - 1);
-    roi.pbin = (uns16)properties->binning;
+    auto binning = (uns16)properties->binning;
+    roi = {
+        .s1 = (uns16)properties->offset.x,
+        .s2 = (uns16)(properties->offset.x + properties->shape.x * binning - 1),
+        .sbin = binning,
+        .p1 = (uns16)properties->offset.y,
+        .p2 = (uns16)(properties->offset.y + properties->shape.y * binning - 1),
+        .pbin = binning,
+    };
 }
 
 void
 rgn_type_to_camera_properties(rgn_type& roi, CameraProperties* properties)
 {
-    properties->offset.x = roi.s1;
-    properties->offset.y = roi.p1;
-    properties->shape.x = roi.s2 - roi.s1 + 1;
-    properties->shape.y = roi.p2 - roi.p1 + 1;
-    // sbin and pbin can be different
     properties->binning = (uint8_t)roi.pbin;
+
+    properties->offset = {
+        .x = roi.s1,
+        .y = roi.p1,
+    };
+    properties->shape = {
+        .x = (uint32_t)((roi.s2 - roi.s1 + 1) / properties->binning),
+        .y = (uint32_t)((roi.p2 - roi.p1 + 1) / properties->binning),
+    };
 }
 
 // forward
@@ -152,7 +159,11 @@ struct PVCamCamera final : public Camera
     // used to avoid doing so when a value is unchanged.
     struct CameraProperties last_known_settings_;
     mutable rgn_type roi_;
-    mutable uns32 exposure_time_; // exposure time in the camera's resolution
+    mutable rgn_type roi_max_;
+    /// exposure time in the camera's resolution
+    mutable uns32 exposure_time_;
+    /// factor to multiply exposure time to get value in microseconds
+    mutable uns32 exposure_time_to_us_;
 
     // Whether or not the camera has been started.
     bool started_;
@@ -177,10 +188,12 @@ struct PVCamCamera final : public Camera
     CallbackContext callback_context_;
 
     /// Property setters
-    void maybe_set_exposure_time_(CameraProperties* properties);
-    void maybe_set_roi_and_binning_(CameraProperties* properties);
+    void maybe_set_exposure_time_(CameraProperties* properties,
+                                  uns32& exposure_time);
+    void maybe_set_roi_and_binning_(CameraProperties* properties,
+                                    rgn_type& roi);
     void maybe_set_pixel_type_(CameraProperties* properties);
-    void maybe_set_input_triggers_(CameraProperties* properties);
+    void maybe_set_input_trigger_(CameraProperties* properties);
     void maybe_set_output_triggers_(CameraProperties* properties);
 
     /// Property getters
@@ -391,18 +404,22 @@ PVCamCamera::set(CameraProperties* properties)
 {
     CHECK(properties);
 
-    maybe_set_exposure_time_(properties);
-    maybe_set_roi_and_binning_(properties);
+    uns32 exposure_time;
+    maybe_set_exposure_time_(properties, exposure_time);
+
+    rgn_type roi;
+    maybe_set_roi_and_binning_(properties, roi);
+
     maybe_set_pixel_type_(properties);
-    maybe_set_input_triggers_(properties);
+    maybe_set_input_trigger_(properties);
     maybe_set_output_triggers_(properties);
 
     // set up acquisition
     PVCAM(pl_exp_setup_cont(hcam,
                             1,
-                            &roi_,
+                            &roi,
                             TIMED_MODE,
-                            exposure_time_,
+                            exposure_time,
                             &bytes_per_frame_,
                             CIRC_NO_OVERWRITE),
           *pvcam_api_mutex_);
@@ -539,9 +556,9 @@ PVCamCamera::get_frame(void* im, size_t* nbytes, struct ImageInfo* info)
 
     // callback will increment frames_available
     callback_context_.cv.wait_for(
-      frame_lock, std::chrono::milliseconds(10), [&] {
-          return callback_context_.frames_available > 0;
-      });
+      frame_lock,
+      std::chrono::microseconds(exposure_time_ * exposure_time_to_us_),
+      [&] { return callback_context_.frames_available > 0; });
 
     if (0 == callback_context_.frames_available) {
         *nbytes = 0;
@@ -585,16 +602,18 @@ PVCamCamera::get_frame(void* im, size_t* nbytes, struct ImageInfo* info)
 }
 
 void
-PVCamCamera::maybe_set_exposure_time_(CameraProperties* properties)
+PVCamCamera::maybe_set_exposure_time_(CameraProperties* properties,
+                                      uns32& exposure_time)
 {
     CHECK(properties);
 
     const auto resolution = get_exposure_time_resolution_to_microseconds_();
-    exposure_time_ = (uns32)(properties->exposure_time_us / resolution);
+    exposure_time = (uns32)(properties->exposure_time_us / resolution);
 }
 
 void
-PVCamCamera::maybe_set_roi_and_binning_(CameraProperties* properties)
+PVCamCamera::maybe_set_roi_and_binning_(CameraProperties* properties,
+                                        rgn_type& roi)
 {
     CHECK(properties);
 
@@ -604,7 +623,17 @@ PVCamCamera::maybe_set_roi_and_binning_(CameraProperties* properties)
         return;
     }
 
-    camera_properties_to_rgn_type(properties, roi_);
+    camera_properties_to_rgn_type(properties, roi);
+
+    // validate roi against max
+    EXPECT(roi.s2 <= roi_max_.s2,
+           "Specified x extent (%d) past sensor limit (%d).",
+           roi.s2,
+           roi_max_.s2);
+    EXPECT(roi.p2 <= roi_max_.p2,
+           "Specified y extent (%d) past sensor limit (%d).",
+           roi.p2,
+           roi_max_.p2);
 }
 
 void
@@ -634,7 +663,7 @@ PVCamCamera::maybe_set_pixel_type_(CameraProperties* properties)
 }
 
 void
-PVCamCamera::maybe_set_input_triggers_(CameraProperties* properties)
+PVCamCamera::maybe_set_input_trigger_(CameraProperties* properties)
 {
     CHECK(properties);
 }
@@ -671,15 +700,14 @@ PVCamCamera::maybe_get_exposure_time_(CameraProperties* properties) const
 void
 PVCamCamera::maybe_get_roi_and_binning_(CameraProperties* properties) const
 {
-    rgn_type_to_camera_properties(roi_, properties);
-
-    try {
-        PVCAM(pl_get_param(hcam, PARAM_ROI, ATTR_CURRENT, &roi_),
-              *pvcam_api_mutex_);
-    } catch (...) {
-        // The ROI parameter is not available.
+    if (!is_param_available(PARAM_ROI)) {
         return;
     }
+
+    PVWARN(pl_get_param(hcam, PARAM_ROI, ATTR_CURRENT, &roi_),
+           *pvcam_api_mutex_);
+    PVWARN(pl_get_param(hcam, PARAM_ROI, ATTR_MAX, &roi_max_),
+           *pvcam_api_mutex_);
 
     rgn_type_to_camera_properties(roi_, properties);
 }
@@ -698,16 +726,12 @@ PVCamCamera::maybe_get_pixel_type_(CameraProperties* properties) const
       pl_get_param(hcam, PARAM_IMAGE_FORMAT_HOST, ATTR_CURRENT, &pixel_format),
       *pvcam_api_mutex_);
 
-    switch (pixel_format) {
-        case PL_IMAGE_FORMAT_MONO8:
-            properties->pixel_type = SampleType_u8;
-            break;
-        case PL_IMAGE_FORMAT_MONO16:
-            properties->pixel_type = SampleType_u16;
-            break;
-        default:
-            LOGE("Unsupported pixel format: %d", pixel_format);
-            break;
+    if (const auto sample_type =
+          pixel_format_to_sample_type.find((PL_IMAGE_FORMATS)pixel_format);
+        sample_type != pixel_format_to_sample_type.end()) {
+        properties->pixel_type = sample_type->second;
+    } else {
+        LOGE("Unsupported pixel format: %d", pixel_format);
     }
 }
 
@@ -734,8 +758,7 @@ PVCamCamera::query_exposure_time_capabilities_(
         return;
     }
 
-    meta->exposure_time_us.writable =
-      (int)is_param_writable(PARAM_EXPOSURE_TIME);
+    meta->exposure_time_us.writable = 1;
 
     ulong64 min, max;
     if (!query_param_min_max(PARAM_EXPOSURE_TIME, &min, &max)) {
@@ -761,8 +784,7 @@ PVCamCamera::query_binning_capabilities(CameraPropertyMetadata* meta) const
         return;
     }
 
-    meta->binning.writable = (int)(is_param_writable(PARAM_BINNING_PAR) &&
-                                   is_param_writable(PARAM_BINNING_SER));
+    meta->binning.writable = 1;
 
     int32 par_min, par_max;
     if (!query_param_min_max(PARAM_BINNING_PAR, &par_min, &par_max)) {
@@ -796,29 +818,28 @@ PVCamCamera::query_roi_capabilities(CameraPropertyMetadata* meta) const
         return;
     }
 
-    auto is_writable = (uint8_t)is_param_writable(PARAM_ROI);
     meta->offset.x = {
-        .writable = is_writable,
+        .writable = 1,
         .low = (float)roi_min.s1,
         .high = (float)roi_max.s1,
         .type = PropertyType_FixedPrecision,
     };
 
     meta->offset.y = {
-        .writable = is_writable,
+        .writable = 1,
         .low = (float)roi_min.p1,
         .high = (float)roi_max.p1,
         .type = PropertyType_FixedPrecision,
     };
 
     meta->shape.x = {
-        .writable = is_writable,
+        .writable = 1,
         .low = (float)(roi_min.s2 - roi_max.s1 + 1),
         .high = (float)(roi_max.s2 - roi_min.s1 + 1),
     };
 
     meta->shape.y = {
-        .writable = is_writable,
+        .writable = 1,
         .low = (float)(roi_min.p2 - roi_max.p1 + 1),
         .high = (float)(roi_max.p2 - roi_min.p1 + 1),
     };
@@ -827,11 +848,109 @@ PVCamCamera::query_roi_capabilities(CameraPropertyMetadata* meta) const
 void
 PVCamCamera::query_pixel_type_capabilities(CameraPropertyMetadata* meta) const
 {
+    meta->supported_pixel_types = 0;
+
+    uns32 count;
+    PVCAM(pl_get_param(hcam, PARAM_IMAGE_FORMAT_HOST, ATTR_COUNT, &count),
+          *pvcam_api_mutex_);
+
+    char text[256];
+
+    for (auto i = 0; i < count; ++i) {
+        uns32 str_length;
+        PVCAM(pl_enum_str_length(hcam, PARAM_IMAGE_FORMAT_HOST, i, &str_length),
+              *pvcam_api_mutex_);
+
+        int32 val;
+        PVCAM(pl_get_enum_param(
+                hcam, PARAM_IMAGE_FORMAT_HOST, i, &val, text, str_length),
+              *pvcam_api_mutex_);
+
+        auto it = pixel_format_to_sample_type.find((PL_IMAGE_FORMATS)val);
+        if (it != pixel_format_to_sample_type.end()) {
+            meta->supported_pixel_types |= (1U << it->second);
+        }
+    }
 }
 
 void
 PVCamCamera::query_triggering_capabilities(CameraPropertyMetadata* meta) const
 {
+    char model[MAX_PRODUCT_NAME_LEN];
+    PVCAM(pl_get_param(hcam, PARAM_PRODUCT_NAME, ATTR_CURRENT, &model),
+          *pvcam_api_mutex_);
+
+    if (strstr(model, "Express")) {
+        meta->digital_lines = {
+            .line_count = 5,
+            .names = {
+              "Trigger In",
+              "Trigger Ready Out",
+              "Read Out",
+              "Expose Out",
+              "Software",
+            },
+        };
+
+        meta->triggers = {
+            .acquisition_start = {
+                .input = 0,
+                .output = 0,
+              },
+            .exposure = {
+              .input = 0,
+              .output = 0
+            },
+            .frame_start = {
+              .input = 0,
+              .output = 0
+            }
+        };
+
+        meta->triggers = {
+            .acquisition_start = {
+              .input = 0b0001'0001,
+              .output = 0b0000'0010,
+            },
+            .exposure = {
+              .input = 0b0000'0001,
+              .output = 0b0000'1000
+            },
+            .frame_start = {
+              .input = 0b0001'0001,
+              .output = 0b0000'1000
+            }
+        };
+    } else {
+        meta->digital_lines = {
+            .line_count = 8,
+            .names = {
+              "Trigger In",
+              "Trigger Ready Out",
+              "Read Out",
+              "Expose Out 1",
+              "Expose Out 2",
+              "Expose Out 3",
+              "Expose Out 4",
+              "Software",
+            },
+        };
+
+        meta->triggers = {
+            .acquisition_start = {
+              .input = 0b1000'0001,
+              .output = 0b0000'0010,
+            },
+            .exposure = {
+              .input = 0b0000'0001,
+              .output = 0b0111'1000
+            },
+            .frame_start = {
+              .input = 0b1000'0001,
+              .output = 0b0111'1000
+            }
+        };
+    }
 }
 
 bool
@@ -897,13 +1016,17 @@ PVCamCamera::get_exposure_time_resolution_to_microseconds_() const
 
     switch (res) {
         case EXP_RES_ONE_MILLISEC:
-            return 1e3f;
+            exposure_time_to_us_ = 1000;
+            break;
         case EXP_RES_ONE_SEC:
-            return 1e6f;
+            exposure_time_to_us_ = 1000000;
+            break;
         case EXP_RES_ONE_MICROSEC:
         default:
-            return 1.f;
+            exposure_time_to_us_ = 1;
     }
+
+    return (float)exposure_time_to_us_;
 }
 
 /// Driver declaration
@@ -1049,10 +1172,11 @@ PVCamDriver::describe(DeviceIdentifier* identifier, uint64_t id)
     CHECK(identifier);
     check_pvcam_camera_id(id);
 
-    char model[CAM_NAME_LEN];
-    char sn[MAX_ALPHA_SER_NUM_LEN];
+    char name[CAM_NAME_LEN];          // PVCAM-assigned name
+    char model[MAX_PRODUCT_NAME_LEN]; // Product name, e.g., "BSI Express"
+    char sn[MAX_ALPHA_SER_NUM_LEN];   // Serial number
 
-    PVCAM(pl_cam_get_name((int16)id, model), *pvcam_api_mutex_);
+    PVCAM(pl_cam_get_name((int16)id, name), *pvcam_api_mutex_);
 
     *identifier = {
         .device_id = (uint8_t)id,
@@ -1063,9 +1187,11 @@ PVCamDriver::describe(DeviceIdentifier* identifier, uint64_t id)
     if (cameras_.contains((int16)id)) {
         hcam = (int16)id;
     } else {
-        PVCAM(pl_cam_open(model, &hcam, OPEN_EXCLUSIVE), *pvcam_api_mutex_);
+        PVCAM(pl_cam_open(name, &hcam, OPEN_EXCLUSIVE), *pvcam_api_mutex_);
     }
 
+    PVCAM(pl_get_param(hcam, PARAM_PRODUCT_NAME, ATTR_CURRENT, model),
+          *pvcam_api_mutex_);
     PVCAM(pl_get_param(hcam, PARAM_HEAD_SER_NUM_ALPHA, ATTR_CURRENT, sn),
           *pvcam_api_mutex_);
 
@@ -1086,13 +1212,13 @@ PVCamDriver::open(uint64_t device_id, Device** out)
     CHECK(out);
     check_pvcam_camera_id(device_id);
 
-    char model[CAM_NAME_LEN];
+    char name[CAM_NAME_LEN];
     int16 hcam;
 
-    PVCAM(pl_cam_get_name((int16)device_id, model), *pvcam_api_mutex_);
+    PVCAM(pl_cam_get_name((int16)device_id, name), *pvcam_api_mutex_);
 
     try {
-        PVCAM(pl_cam_open(model, &hcam, OPEN_EXCLUSIVE), *pvcam_api_mutex_);
+        PVCAM(pl_cam_open(name, &hcam, OPEN_EXCLUSIVE), *pvcam_api_mutex_);
     } catch (...) {
         // clean up on error
         close_camera(hcam);

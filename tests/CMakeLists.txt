@@ -23,7 +23,12 @@ else ()
             prime-bsi-configure-properties
             prime-bsi-configure-triggering
             prime-bsi-abort-while-waiting-for-trigger
-            pvtest # TODO (aliddell): remove
+            prime-bsi-express-metadata
+            prime-bsi-express-one-video-stream
+            prime-bsi-express-repeat-start
+            prime-bsi-express-repeat-start-no-stop
+            prime-bsi-express-configure-properties
+            prime-bsi-express-configure-triggering
     )
 
     foreach (name ${tests})
@@ -38,15 +43,15 @@ else ()
                 acquire-core-logger
                 acquire-core-platform
                 acquire-video-runtime
-                pvcam
         )
 
         add_test(NAME test-${tgt} COMMAND ${tgt})
-        if (name MATCHES "^primt-bsi")
-            set_tests_properties(test-${tgt} PROPERTIES FIXTURES_REQUIRED setup-oryx)
+        if (name MATCHES "^prime-bsi-express")
+            set_tests_properties(test-${tgt} PROPERTIES LABELS "acquire-driver-pvcam;prime-bsi-express")
+        elseif (name MATCHES "^prime-bsi")
             set_tests_properties(test-${tgt} PROPERTIES LABELS "acquire-driver-pvcam;prime-bsi")
         else () # list-devices
-            set_tests_properties(test-${tgt} PROPERTIES LABELS "acquire-driver-pvcam;blackfly;oryx")
+            set_tests_properties(test-${tgt} PROPERTIES LABELS "acquire-driver-pvcam;prime-bsi;prime-bsi-express")
         endif ()
     endforeach ()
 

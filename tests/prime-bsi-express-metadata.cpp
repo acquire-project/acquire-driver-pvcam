@@ -67,7 +67,7 @@ setup(AcquireRuntime* runtime)
 
     DEVOK(device_manager_select(dm,
                                 DeviceKind_Camera,
-                                SIZED(".*BSI.*") - 1,
+                                SIZED(".*BSI Express.*") - 1,
                                 &props.video[0].camera.identifier));
     DEVOK(device_manager_select(dm,
                                 DeviceKind_Storage,
@@ -129,13 +129,13 @@ check_metadata(AcquireRuntime* runtime)
               (1U << SampleType_u8) | (1U << SampleType_u16));
 
     ASSERT_EQ(
-      uint8_t, "0x%x", meta.triggers.acquisition_start.input, 0b1000'0001);
+      uint8_t, "0x%x", meta.triggers.acquisition_start.input, 0b0001'0001);
     ASSERT_EQ(
       uint8_t, "0x%x", meta.triggers.acquisition_start.output, 0b0000'0010);
     ASSERT_EQ(uint8_t, "0x%x", meta.triggers.exposure.input, 0b0000'0001);
-    ASSERT_EQ(uint8_t, "0x%x", meta.triggers.exposure.output, 0b0111'1000);
-    ASSERT_EQ(uint8_t, "0x%x", meta.triggers.frame_start.input, 0b1000'0001);
-    ASSERT_EQ(uint8_t, "0x%x", meta.triggers.frame_start.output, 0b0111'1000);
+    ASSERT_EQ(uint8_t, "0x%x", meta.triggers.exposure.output, 0b0000'1000);
+    ASSERT_EQ(uint8_t, "0x%x", meta.triggers.frame_start.input, 0b0001'0001);
+    ASSERT_EQ(uint8_t, "0x%x", meta.triggers.frame_start.output, 0b0000'1000);
 }
 
 int
