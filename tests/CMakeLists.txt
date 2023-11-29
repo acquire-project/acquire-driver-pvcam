@@ -16,19 +16,16 @@ else ()
     #
     set(tests
             list-devices
+            bsi-express-metadata
+            bsi-express-one-video-stream
+            bsi-express-repeat-start
+            bsi-express-repeat-start-no-stop
+            bsi-express-configure-properties
             prime-bsi-metadata
             prime-bsi-one-video-stream
             prime-bsi-repeat-start
             prime-bsi-repeat-start-no-stop
             prime-bsi-configure-properties
-            prime-bsi-configure-triggering
-            prime-bsi-abort-while-waiting-for-trigger
-            prime-bsi-express-metadata
-            prime-bsi-express-one-video-stream
-            prime-bsi-express-repeat-start
-            prime-bsi-express-repeat-start-no-stop
-            prime-bsi-express-configure-properties
-            prime-bsi-express-configure-triggering
     )
 
     foreach (name ${tests})
@@ -46,12 +43,12 @@ else ()
         )
 
         add_test(NAME test-${tgt} COMMAND ${tgt})
-        if (name MATCHES "^prime-bsi-express")
-            set_tests_properties(test-${tgt} PROPERTIES LABELS "acquire-driver-pvcam;prime-bsi-express")
-        elseif (name MATCHES "^prime-bsi")
+        if (name MATCHES "^prime-bsi")
             set_tests_properties(test-${tgt} PROPERTIES LABELS "acquire-driver-pvcam;prime-bsi")
+        elseif (name MATCHES "^bsi-express")
+            set_tests_properties(test-${tgt} PROPERTIES LABELS "acquire-driver-pvcam;bsi-express")
         else () # list-devices
-            set_tests_properties(test-${tgt} PROPERTIES LABELS "acquire-driver-pvcam;prime-bsi;prime-bsi-express")
+            set_tests_properties(test-${tgt} PROPERTIES LABELS "acquire-driver-pvcam;prime-bsi;bsi-express")
         endif ()
     endforeach ()
 

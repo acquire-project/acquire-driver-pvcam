@@ -64,7 +64,7 @@ setup(AcquireRuntime* runtime, AcquireProperties* props)
 
     DEVOK(device_manager_select(dm,
                                 DeviceKind_Camera,
-                                SIZED(".*BSI.*") - 1,
+                                SIZED(".*PRIME-BSI.*") - 1,
                                 &props->video[0].camera.identifier));
     DEVOK(device_manager_select(dm,
                                 DeviceKind_Storage,
