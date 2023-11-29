@@ -153,13 +153,6 @@ test(AcquireRuntime* runtime, AcquireProperties* props)
               "%d",
               props->video[0].camera.settings.pixel_type,
               SampleType_u16);
-    //        //        props->video[0].camera.settings.pixel_type =
-    //        SampleType_u8;
-    //        //        OK(acquire_configure(runtime, props));
-    //        //        ASSERT_EQ(SampleType,
-    //        //                  "%d",
-    //        //                  props->video[0].camera.settings.pixel_type,
-    //                  SampleType_u8);
 
     // Exposure time is tricky because only certain values are supported.
     // Here we set to the min and max values because those should be

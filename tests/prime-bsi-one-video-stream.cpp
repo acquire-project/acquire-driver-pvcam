@@ -96,7 +96,7 @@ acquire(AcquireRuntime* runtime)
         return (uint8_t*)end - (uint8_t*)cur;
     };
 
-    clock clock_{};
+    struct clock clock_{};
     static double time_limit_ms = 20000.0;
     clock_init(&clock_);
     clock_shift_ms(&clock_, time_limit_ms);
@@ -104,7 +104,7 @@ acquire(AcquireRuntime* runtime)
 
     uint64_t nframes = 0;
     while (nframes < props.video[0].max_frame_count) {
-        clock throttle{};
+        struct clock throttle{};
         clock_init(&throttle);
         EXPECT(clock_cmp_now(&clock_) < 0,
                "Timeout at %f ms",

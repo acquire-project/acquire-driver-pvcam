@@ -72,12 +72,12 @@ setup(AcquireRuntime* runtime)
 double
 acquire(AcquireRuntime* runtime)
 {
-    struct clock clock = {};
-    clock_init(&clock);
+    struct clock clock_ = {};
+    clock_init(&clock_);
     OK(acquire_start(runtime));
     OK(acquire_stop(runtime));
 
-    return clock_toc_ms(&clock);
+    return clock_toc_ms(&clock_);
 }
 
 int

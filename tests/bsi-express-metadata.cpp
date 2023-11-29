@@ -74,11 +74,6 @@ setup(AcquireRuntime* runtime)
                                 SIZED("Trash") - 1,
                                 &props.video[0].storage.identifier));
 
-    // Some metadata is dependent on some properties.
-    // Reset the properties to something sensible.
-    //    props.video[0].camera.settings.binning = 1;
-    //    props.video[0].camera.settings.offset = { .x = 0, .y = 0 };
-    //    props.video[0].camera.settings.shape = { .x = 2048, .y = 2048 };
     OK(acquire_configure(runtime, &props));
 }
 
@@ -127,15 +122,6 @@ check_metadata(AcquireRuntime* runtime)
               "0x%x",
               (unsigned int)meta.supported_pixel_types,
               (1U << SampleType_u8) | (1U << SampleType_u16));
-
-    ASSERT_EQ(
-      uint8_t, "0x%x", meta.triggers.acquisition_start.input, 0b0001'0001);
-    ASSERT_EQ(
-      uint8_t, "0x%x", meta.triggers.acquisition_start.output, 0b0000'0010);
-    ASSERT_EQ(uint8_t, "0x%x", meta.triggers.exposure.input, 0b0000'0001);
-    ASSERT_EQ(uint8_t, "0x%x", meta.triggers.exposure.output, 0b0000'1000);
-    ASSERT_EQ(uint8_t, "0x%x", meta.triggers.frame_start.input, 0b0001'0001);
-    ASSERT_EQ(uint8_t, "0x%x", meta.triggers.frame_start.output, 0b0000'1000);
 }
 
 int
