@@ -110,12 +110,12 @@ check_metadata(AcquireRuntime* runtime)
 
     ASSERT_EQ(uint8_t, "%d", meta.offset.x.writable, 1);
     ASSERT_EQ(float, "%g", meta.offset.x.low, 0);
-    ASSERT_EQ(float, "%g", meta.offset.x.high, 0);
+    ASSERT_EQ(float, "%g", meta.offset.x.high, 2047);
     ASSERT_EQ(int, "%d", meta.offset.x.type, PropertyType_FixedPrecision);
 
     ASSERT_EQ(uint8_t, "%d", meta.offset.y.writable, 1);
     ASSERT_EQ(float, "%g", meta.offset.y.low, 0);
-    ASSERT_EQ(float, "%g", meta.offset.y.high, 0);
+    ASSERT_EQ(float, "%g", meta.offset.y.high, 2047);
     ASSERT_EQ(int, "%d", meta.offset.y.type, PropertyType_FixedPrecision);
 
     ASSERT_EQ(unsigned int,
