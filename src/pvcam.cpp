@@ -121,7 +121,7 @@ void
 callback_handler(FRAME_INFO* frame_info, void* context)
 {
     auto* ctx = (CallbackContext*)context;
-    std::unique_lock<std::mutex> frame_lock(*ctx->frame_mutex);
+    std::scoped_lock<std::mutex> frame_lock(*ctx->frame_mutex);
 
     PVCAM(pl_exp_get_oldest_frame_ex(ctx->hcam, (void**)ctx->frame, frame_info),
           *ctx->api_mutex);
@@ -595,10 +595,6 @@ PVCamCamera::get_frame(void* im, size_t* nbytes, struct ImageInfo* info)
     PVCAM(pl_exp_unlock_oldest_frame(hcam_), *pvcam_api_mutex_);
 
     ++frame_count_;
-
-    rgn_type roi;
-    PVCAM(pl_get_param(hcam_, PARAM_ROI, ATTR_CURRENT, &roi),
-          *pvcam_api_mutex_);
 }
 
 void
@@ -677,9 +673,6 @@ PVCamCamera::maybe_set_output_triggers_(CameraProperties* properties)
 void
 PVCamCamera::maybe_get_exposure_time_(CameraProperties* properties) const
 {
-    const auto resolution = get_exposure_time_resolution_to_microseconds_();
-    properties->exposure_time_us = (float)exposure_time_ * resolution;
-
     if (!is_param_available(PARAM_EXPOSURE_TIME)) {
         return;
     }
@@ -694,6 +687,7 @@ PVCamCamera::maybe_get_exposure_time_(CameraProperties* properties) const
     }
 
     // convert the resolution to microseconds
+    const auto resolution = get_exposure_time_resolution_to_microseconds_();
     properties->exposure_time_us = (float)exposure_time_ * resolution;
 }
 
