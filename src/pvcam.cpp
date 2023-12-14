@@ -30,7 +30,7 @@
     do {                                                                       \
         std::scoped_lock<std::mutex> lock((mtx));                              \
         if (PV_OK != (e)) {                                                    \
-            const int16_t code = pl_error_code();                                \
+            const int16_t code = pl_error_code();                              \
             char msg[ERROR_MSG_LEN];                                           \
             pl_error_message(code, msg);                                       \
             logger(msg);                                                       \
@@ -78,10 +78,12 @@ camera_properties_to_rgn_type(CameraProperties* properties, rgn_type& roi)
     auto binning = (uint16_t)properties->binning;
     roi = {
         .s1 = (uint16_t)properties->offset.x,
-        .s2 = (uint16_t)(properties->offset.x + properties->shape.x * binning - 1),
+        .s2 =
+          (uint16_t)(properties->offset.x + properties->shape.x * binning - 1),
         .sbin = binning,
         .p1 = (uint16_t)properties->offset.y,
-        .p2 = (uint16_t)(properties->offset.y + properties->shape.y * binning - 1),
+        .p2 =
+          (uint16_t)(properties->offset.y + properties->shape.y * binning - 1),
         .pbin = binning,
     };
 }
@@ -545,11 +547,6 @@ PVCamCamera::get_frame(void* im, size_t* nbytes, struct ImageInfo* info)
     CHECK(im);
     CHECK(nbytes);
     CHECK(info);
-
-    int16_t status;
-    uint32_t byte_cnt, buffer_cnt;
-    PVCAM(pl_exp_check_cont_status(hcam_, &status, &byte_cnt, &buffer_cnt),
-          *pvcam_api_mutex_);
 
     std::unique_lock<std::mutex> frame_lock(*frame_mutex_);
 
