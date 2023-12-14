@@ -114,6 +114,7 @@ struct CallbackContext
     std::shared_ptr<std::mutex> frame_mutex;
     std::condition_variable cv;
     std::atomic<int> frames_available;
+    std::atomic<bool> error;
 
     uint8_t** frame;
     FRAME_INFO info;
@@ -125,11 +126,19 @@ callback_handler(FRAME_INFO* frame_info, void* context)
     auto* ctx = (CallbackContext*)context;
     std::scoped_lock<std::mutex> frame_lock(*ctx->frame_mutex);
 
-    PVCAM(pl_exp_get_oldest_frame_ex(ctx->hcam, (void**)ctx->frame, frame_info),
+    try {
+        // If the camera in use is not able to return the oldest frame for the
+        // current operating mode, this function will fail.
+        PVCAM(
+          pl_exp_get_oldest_frame_ex(ctx->hcam, (void**)ctx->frame, frame_info),
           *ctx->api_mutex);
 
-    ctx->info = *frame_info;
-    ++ctx->frames_available;
+        ctx->info = *frame_info;
+        ++ctx->frames_available;
+    } catch (...) { // error is logged in the PVCAM macro
+        ctx->error = true;
+    }
+
     ctx->cv.notify_one();
 }
 
@@ -168,7 +177,7 @@ struct PVCamCamera final : public Camera
     mutable uint32_t exposure_time_to_us_;
 
     // Whether or not the camera has been started.
-    bool started_;
+    bool is_running_;
 
     // The number of bytes for a single ROI.
     uint32_t bytes_per_frame_;
@@ -363,7 +372,7 @@ PVCamCamera::PVCamCamera(int16_t hcam, std::shared_ptr<std::mutex> api_mutex)
   , bytes_per_frame_{ 0 }
   , nframes_buf_{ 0 }
   , frame_count_{ 0 }
-  , started_{ false }
+  , is_running_{ false }
   , pl_buffer_{ nullptr }
   , pl_buffer_size_{ 0 }
   , callback_context_ {
@@ -372,6 +381,7 @@ PVCamCamera::PVCamCamera(int16_t hcam, std::shared_ptr<std::mutex> api_mutex)
       .frame_mutex = frame_mutex_,
       .cv = {},
       .frames_available = 0,
+      .error = false,
       .frame = new uint8_t*(),
       .info = {},
   }
@@ -483,7 +493,7 @@ PVCamCamera::start()
 {
     using namespace std::chrono_literals;
 
-    CHECK(!started_);
+    CHECK(!is_running_);
 
     // allocate internal frame buffers, counters, and cursors
     uint64_t frame_buffer_size;
@@ -507,19 +517,19 @@ PVCamCamera::start()
     PVCAM(pl_exp_check_cont_status(hcam_, &status, &byte_cnt, &buffer_cnt),
           *pvcam_api_mutex_);
 
-    started_ = true;
+    is_running_ = true;
 }
 
 void
 PVCamCamera::stop()
 {
-    if (!started_) {
+    if (!is_running_) {
         return;
     }
 
     LOG("Stopping");
     PVCAM(pl_exp_stop_cont(hcam_, CCS_HALT), *pvcam_api_mutex_);
-    started_ = false;
+    is_running_ = false;
 
     delete[] pl_buffer_;
     pl_buffer_ = nullptr;
@@ -550,16 +560,33 @@ PVCamCamera::get_frame(void* im, size_t* nbytes, struct ImageInfo* info)
 
     std::unique_lock<std::mutex> frame_lock(*frame_mutex_);
 
-    // callback will increment frames_available
-    callback_context_.cv.wait_for(
-      frame_lock,
-      std::chrono::microseconds(exposure_time_ * exposure_time_to_us_),
-      [&] { return callback_context_.frames_available > 0; });
+    while (is_running_) {
+        // callback will increment frames_available
+        callback_context_.cv.wait_for(
+          frame_lock,
+          std::chrono::microseconds(exposure_time_ * exposure_time_to_us_),
+          [&] {
+              return callback_context_.frames_available > 0 ||
+                     callback_context_.error;
+          });
 
-    if (0 == callback_context_.frames_available) {
+        if (callback_context_.error) {
+            // error is logged in the callback handler thread
+            callback_context_.error = false;
+            *nbytes = 0;
+            return;
+        }
+
+        if (callback_context_.frames_available > 0) {
+            break;
+        }
+    }
+
+    if (!is_running_) {
         *nbytes = 0;
         return;
     }
+
     --callback_context_.frames_available;
 
     uint32_t width = last_known_settings_.shape.x,
