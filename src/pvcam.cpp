@@ -560,7 +560,7 @@ PVCamCamera::get_frame(void* im, size_t* nbytes, struct ImageInfo* info)
 
     std::unique_lock<std::mutex> frame_lock(*frame_mutex_);
 
-    while (is_running_) {
+    while (is_running_ && callback_context_.frames_available == 0) {
         // callback will increment frames_available
         callback_context_.cv.wait_for(
           frame_lock,
@@ -575,10 +575,6 @@ PVCamCamera::get_frame(void* im, size_t* nbytes, struct ImageInfo* info)
             callback_context_.error = false;
             *nbytes = 0;
             return;
-        }
-
-        if (callback_context_.frames_available > 0) {
-            break;
         }
     }
 
