@@ -1,5 +1,10 @@
 # Acquire driver for PVCAM
 
+
+
+[![Build](https://github.com/acquire-project/acquire-driver-pvcam/actions/workflows/build.yml/badge.svg)](https://github.com/acquire-project/acquire-driver-pvcam/actions/workflows/build.yml)
+[![Tests](https://github.com/acquire-project/acquire-driver-pvcam/actions/workflows/test_pr.yml/badge.svg)](https://github.com/acquire-project/acquire-driver-pvcam/actions/workflows/test_pr.yml)
+
 This is an Acquire driver that supports some Teledyne Photometrics cameras using the PVCAM SDK.
 
 ## Usage
