@@ -891,7 +891,7 @@ PVCamCamera::query_pixel_type_capabilities(CameraPropertyMetadata* meta) const
 bool
 PVCamCamera::is_param_available(uint32_t param_id) const
 {
-    uint8_t is_avail;
+    uint16_t is_avail;
     if (PV_OK != pl_get_param(hcam_, param_id, ATTR_AVAIL, &is_avail)) {
         return false;
     }
