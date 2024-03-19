@@ -26,6 +26,11 @@ else ()
             prime-bsi-repeat-start
             prime-bsi-repeat-start-no-stop
             prime-bsi-configure-properties
+            kinetix-metadata
+            kinetix-one-video-stream
+            kinetix-repeat-start
+            kinetix-repeat-start-no-stop
+            kinetix-configure-properties
     )
 
     foreach (name ${tests})
@@ -47,6 +52,8 @@ else ()
             set_tests_properties(test-${tgt} PROPERTIES LABELS "acquire-driver-pvcam;prime-bsi")
         elseif (name MATCHES "^bsi-express")
             set_tests_properties(test-${tgt} PROPERTIES LABELS "acquire-driver-pvcam;bsi-express")
+        elseif (name MATCHES "^kinetix")
+            set_tests_properties(test-${tgt} PROPERTIES LABELS "acquire-driver-pvcam;kinetix")
         else () # list-devices
             set_tests_properties(test-${tgt} PROPERTIES LABELS "acquire-driver-pvcam;prime-bsi;bsi-express")
         endif ()
