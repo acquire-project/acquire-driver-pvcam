@@ -5,6 +5,7 @@ install
 .cache
 CMakeSettings.json
 .vs
+Testing/
 TestResults
 cmake-build*
 .DS_Store
