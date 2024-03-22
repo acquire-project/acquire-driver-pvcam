@@ -24,7 +24,7 @@ jobs:
       - name: Enable long paths
         run: |
           git config --global core.longpaths true
-        shell: pwsh
+        shell: cmd
 
       - name: Checkout
         uses: actions/checkout@v3
