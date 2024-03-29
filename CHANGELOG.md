@@ -6,3 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## Unreleased
+
+## [0.1.1](https://github.com/acquire-project/acquire-driver-pvcam/compare/v0.1.0...v0.1.1) - 2024-03-29
+
+### Added
+
+- Support for [Kinetix](https://www.photometrics.com/products/kinetix-family/kinetix) cameras.
+
+## 0.1.0 - 2024-01-11
