@@ -70,7 +70,8 @@ setup(AcquireRuntime* runtime)
                             SIZED(TEST ".tif"),
                             nullptr,
                             0,
-                            { .x = 1, .y = 1 });
+                            { .x = 1, .y = 1 },
+                            0);
 
     props.video[0].camera.settings.binning = 1;
     props.video[0].camera.settings.pixel_type = SampleType_u16;
